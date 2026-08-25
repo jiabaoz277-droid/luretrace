@@ -14,6 +14,8 @@ class Settings:
         self.model_api_key: str = os.getenv("MODEL_API_KEY", "")
         self.model_base_url: str = os.getenv("MODEL_BASE_URL", "")
         self.model_name: str = os.getenv("MODEL_NAME", "")
+        # 真实天气/地理数据源（和风天气 QWeather，免费额度）
+        self.qweather_key: str = os.getenv("QWEATHER_KEY", "")
         self.database_url: str = os.getenv(
             "DATABASE_URL", f"sqlite:///{BASE_DIR / 'data' / 'fishing.db'}"
         )

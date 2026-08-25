@@ -53,6 +53,7 @@ npm run dev -- -p 3002
 | --- | --- |
 | `MODEL_API_KEY` | 模型 Key（开发期可空，验收前提供） |
 | `MODEL_BASE_URL` / `MODEL_NAME` | 模型接口（接入真实 LLM 后使用） |
+| `QWEATHER_KEY` | 和风天气 Key（不填则天气降级为 mock） |
 | `DATABASE_URL` | 默认 `sqlite:///<项目>/data/fishing.db` |
 | `CORS_ORIGINS` | 前端来源，默认 `http://localhost:3000,http://localhost:3002` |
 
