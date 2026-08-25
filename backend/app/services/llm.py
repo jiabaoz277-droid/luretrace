@@ -80,6 +80,55 @@ def chat_completion(
     raise RuntimeError(f"模型调用失败（已重试 {_MAX_RETRIES} 次）：{type(last_err).__name__}")
 
 
+def chat_completion_stream(
+    messages: list[dict],
+    temperature: float = 0.3,
+    max_tokens: int = 800,
+):
+    """流式调用 OpenAI 兼容接口，逐段 yield 文本增量（token 级别）。
+
+    中途失败会抛异常，由调用方转为统一 error 事件；不静默断流。
+    """
+    if not is_configured():
+        raise RuntimeError("未配置模型 API Key")
+    url = f"{_base_url()}/chat/completions"
+    payload: dict = {
+        "model": _model(),
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.model_api_key}",
+        "Content-Type": "application/json",
+    }
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        with client.stream("POST", url, json=payload, headers=headers) as resp:
+            if resp.status_code == 401:
+                raise RuntimeError("API Key 无效或已过期，请检查 .env 中的 MODEL_API_KEY")
+            if resp.status_code == 402:
+                raise RuntimeError("模型账户额度不足，请充值后重试")
+            if resp.status_code == 429:
+                raise RuntimeError("触发模型限流，请稍后重试")
+            if resp.status_code >= 400:
+                raise RuntimeError(f"模型接口返回 {resp.status_code}")
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data_str = line[6:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    data = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                delta = (data.get("choices") or [{}])[0].get("delta") or {}
+                content = delta.get("content")
+                if content:
+                    yield content
+
+
 def _extract_json(text: str) -> str:
     """宽容地提取 JSON：模型可能包在 ```json``` 或前后有解释文字。"""
     text = text.strip()
@@ -166,6 +215,33 @@ def generate_reply_llm(plan: PlanData) -> str:
         max_tokens=300,
     )
     return raw.strip()
+
+
+def stream_reply(plan: PlanData):
+    """流式生成回复（生成器）。
+
+    - 安全 no_go：确定性文案，不调模型；
+    - 未配置 Key：模板；
+    - 已配置：逐 token 流式调用真实模型，异常向上抛由 api 层转 error。
+    """
+    if plan.conclusion == "no_go" and plan.safety:
+        yield "⚠️ " + plan.safety[0]
+        return
+    if not is_configured():
+        yield _template_reply(plan)
+        return
+    user = json.dumps(plan.model_dump(), ensure_ascii=False)
+    yield from chat_completion_stream(
+        [
+            {"role": "system", "content": _REPLY_SYSTEM},
+            {
+                "role": "user",
+                "content": f"根据以下方案数据，生成给用户的一句话回复（结论、窗口、方案要点）：\n{user}",
+            },
+        ],
+        temperature=0.3,
+        max_tokens=300,
+    )
 
 
 # ---------- 对外回复（带兜底） ----------

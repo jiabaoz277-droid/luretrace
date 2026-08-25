@@ -1,4 +1,8 @@
-"""对话接口：SSE 流式输出，事件序列 chunk* → done | error。"""
+"""对话接口：SSE 流式输出，事件序列 chunk* → done | error。
+
+方案类回复走真实模型逐 token 流式；追问/知识类短文本走模板分块。
+流中途失败会以 error 事件返回统一结构，不静默断流。
+"""
 from __future__ import annotations
 
 import json
@@ -6,9 +10,9 @@ import json
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from ..core.errors import AppError, error_payload
-from ..schemas.chat import ChatDonePayload, ChatRequest
-from ..services import agent
+from ..core.errors import AppError
+from ..schemas.chat import ChatRequest
+from ..services import agent, llm
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -18,7 +22,7 @@ def _sse(data: dict) -> str:
 
 
 def _chunks(text: str):
-    """把回复切成小块，模拟流式输出。"""
+    """把短文本切成小块输出。"""
     step = max(6, len(text) // 6)
     for i in range(0, len(text), step):
         yield text[i : i + step]
@@ -28,15 +32,25 @@ def _chunks(text: str):
 async def chat(req: ChatRequest) -> StreamingResponse:
     async def gen():
         try:
-            result = agent.handle(req.message, req.session_id)
+            result = agent.prepare(req.message, req.session_id)
             sid = result.get("session_id")
+            reply_parts: list[str] = []
 
-            # 流式输出回复文本
-            reply = result.get("reply", "")
-            for piece in _chunks(reply):
-                yield _sse({"type": "chunk", "content": piece, "session_id": sid})
+            if result.get("plan"):
+                # 真实模型逐 token 流式（安全 no_go 时为确定性文案）
+                for piece in llm.stream_reply(result["plan"]):
+                    reply_parts.append(piece)
+                    yield _sse({"type": "chunk", "content": piece, "session_id": sid})
+            else:
+                text = result.get("reply") or ""
+                reply_parts.append(text)
+                for piece in _chunks(text):
+                    yield _sse({"type": "chunk", "content": piece, "session_id": sid})
 
-            # 完成事件
+            reply = "".join(reply_parts)
+            if not reply and result.get("plan"):
+                reply = "已为你生成方案，详见下方方案卡。"
+
             payload: dict = {"type": result.get("type", "reply"), "reply": reply}
             if result.get("plan"):
                 payload["plan"] = result["plan"].model_dump()
@@ -48,7 +62,10 @@ async def chat(req: ChatRequest) -> StreamingResponse:
         except Exception:
             # 统一兜底：不向用户暴露堆栈
             yield _sse(
-                {"type": "error", "error": {"code": "internal_error", "message": "服务暂时不可用，请稍后重试"}}
+                {
+                    "type": "error",
+                    "error": {"code": "internal_error", "message": "服务暂时不可用，请稍后重试"},
+                }
             )
 
     return StreamingResponse(

@@ -94,7 +94,11 @@ def _extract_species(text: str) -> str | None:
     return None
 
 
-def handle(message: str, session_id: str | None, now: datetime | None = None) -> dict:
+def prepare(message: str, session_id: str | None, now: datetime | None = None) -> dict:
+    """同步完成意图/槽位/决策/持久化，返回结果。
+
+    plan 类型的 reply 为 None，由调用方（流式接口）生成；非流式入口见 handle。
+    """
     now = now or datetime.now()
     sid, session = _get_or_create_session(session_id)
     intent = detect_intent(message)
@@ -119,9 +123,9 @@ def handle(message: str, session_id: str | None, now: datetime | None = None) ->
             "session_id": sid,
         }
 
-    # 决策流：规则抽取 +（已配置时）LLM 抽取，LLM 非空字段优先、规则兑底
+    # 决策流：先规则抽取；规则未抽到关键槽位时再用 LLM 增强（省一次调用、降首字延迟）
     new_slots = extract_slots(message, now)
-    if llm.is_configured():
+    if llm.is_configured() and (not new_slots.location or not new_slots.target_species):
         llm_slots = llm.extract_slots_llm(message, now)
         if llm_slots is not None:
             new_slots = _merge(new_slots, llm_slots)
@@ -135,7 +139,7 @@ def handle(message: str, session_id: str | None, now: datetime | None = None) ->
         plan = build_plan(ctx, weather, hazards, now)
         plan.session_id = sid
         plan = _persist_plan(plan, session)
-        return {"type": "plan", "reply": llm.reply_for_plan(plan), "plan": plan, "session_id": sid}
+        return {"type": "plan", "reply": None, "plan": plan, "session_id": sid}
 
     missing = missing_slots(ctx)
     if missing:
@@ -147,4 +151,12 @@ def handle(message: str, session_id: str | None, now: datetime | None = None) ->
     plan = build_plan(ctx, weather, hazards, now)
     plan.session_id = sid
     plan = _persist_plan(plan, session)
-    return {"type": "plan", "reply": llm.reply_for_plan(plan), "plan": plan, "session_id": sid}
+    return {"type": "plan", "reply": None, "plan": plan, "session_id": sid}
+
+
+def handle(message: str, session_id: str | None, now: datetime | None = None) -> dict:
+    """非流式入口：prepare + 补全回复（测试/冒烟/内部调用用）。"""
+    result = prepare(message, session_id, now)
+    if result.get("plan") and result.get("reply") is None:
+        result["reply"] = llm.reply_for_plan(result["plan"])
+    return result
