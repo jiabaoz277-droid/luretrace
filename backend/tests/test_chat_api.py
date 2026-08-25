@@ -1,5 +1,18 @@
-"""端到端接口测试：SSE 事件序列 + 追问 + 方案持久化（mock，离线）。"""
+"""端到端接口测试：SSE 事件序列 + 追问 + 方案持久化（mock，离线）。
+
+通过 monkeypatch 强制关闭真实模型，保证第一层测试永远离线可跑。
+"""
 import json
+
+import pytest
+
+from app.services import llm
+
+
+@pytest.fixture(autouse=True)
+def _offline_llm(monkeypatch):
+    monkeypatch.setattr(llm, "is_configured", lambda: False)
+    yield
 
 
 def _parse_sse(text: str) -> list[dict]:
