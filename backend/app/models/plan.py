@@ -36,6 +36,7 @@ class Plan(Base):
     risks: Mapped[list] = mapped_column(JSON, default=list)
     safety: Mapped[list] = mapped_column(JSON, default=list)
     data_basis: Mapped[dict] = mapped_column(JSON, default=dict)
+    history_note: Mapped[str | None] = mapped_column(String(256), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active/outdated
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -61,4 +62,5 @@ class Plan(Base):
             "risks": json.loads(json.dumps(self.risks or [])),
             "safety": json.loads(json.dumps(self.safety or [])),
             "data_basis": json.loads(json.dumps(self.data_basis or {})),
+            "history_note": self.history_note,
         }

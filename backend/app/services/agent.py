@@ -10,9 +10,10 @@ from datetime import datetime
 
 from ..core import db
 from ..models.plan import Plan
-from ..models.report import CatchReport
+from ..models.report import RESULT_LABELS, CatchReport
+from ..models.spot import FavoriteSpot
 from ..schemas.chat import FishingContext, PlanData
-from . import llm, onsite
+from . import insights, llm, onsite
 from .decision import build_plan
 from .intent import (
     SPECIES_ALIASES,
@@ -84,6 +85,7 @@ def _persist_plan(plan: PlanData, session: dict) -> PlanData:
             risks=plan.risks,
             safety=plan.safety,
             data_basis=plan.data_basis,
+            history_note=plan.history_note,
             status="active",
         )
         s.add(row)
@@ -221,6 +223,58 @@ def _handle_report_input(message: str, sid: str, session: dict) -> dict:
     }
 
 
+# ---------- 收藏钓点 / 个性化经验（第 3 阶段） ----------
+
+def _similar_history(target_species: str | None) -> str | None:
+    if not target_species:
+        return None
+    with db.get_session() as s:
+        r = (
+            s.query(CatchReport)
+            .filter(CatchReport.species == target_species)
+            .order_by(CatchReport.id.desc())
+            .first()
+        )
+    if not r:
+        return None
+    label = RESULT_LABELS.get(r.result_type, r.result_type)
+    date_str = r.created_at.strftime("%m月%d日") if r.created_at else ""
+    return f"历史参考：你上次打{target_species}（{date_str}）是{label}。"
+
+
+def _list_favorites(sid: str) -> dict:
+    with db.get_session() as s:
+        spots = (
+            s.query(FavoriteSpot)
+            .filter(FavoriteSpot.user_id == "default")
+            .order_by(FavoriteSpot.id.desc())
+            .all()
+        )
+    if not spots:
+        return {"type": "reply", "reply": "你还没有收藏钓点，说“收藏富春江”即可收藏。", "session_id": sid}
+    names = "、".join(sp.name for sp in spots)
+    return {"type": "reply", "reply": f"你收藏了：{names}", "session_id": sid}
+
+
+def _add_favorite(message: str, sid: str, session: dict, now: datetime) -> dict:
+    loc = extract_slots(message, now).location
+    if not loc:
+        loc = session["context"].location
+    if not loc:
+        return {"type": "reply", "reply": "想收藏哪个水域？告诉我名字，比如“收藏富春江”。", "session_id": sid}
+    with db.get_session() as s:
+        spot = FavoriteSpot(name=loc, location=loc)
+        s.add(spot)
+        s.commit()
+    return {"type": "reply", "reply": f"已收藏「{loc}」。", "session_id": sid}
+
+
+def _handle_insight(sid: str) -> dict:
+    with db.get_session() as s:
+        stats = insights.compute(s)
+    return {"type": "insight", "reply": llm.insight_for_stats(stats), "insight": stats, "session_id": sid}
+
+
 # ---------- 主流程 ----------
 
 def prepare(message: str, session_id: str | None, now: datetime | None = None) -> dict:
@@ -235,6 +289,14 @@ def prepare(message: str, session_id: str | None, now: datetime | None = None) -
         return _handle_onsite_answer(message, sid, session)
     if mode == "report":
         return _handle_report_input(message, sid, session)
+
+    # 收藏 / 历史规律（第 3 阶段）
+    if "收藏" in message:
+        if any(k in message for k in ["我的收藏", "收藏了", "收藏的", "看收藏"]):
+            return _list_favorites(sid)
+        return _add_favorite(message, sid, session, now)
+    if any(k in message for k in ["我的规律", "历史规律", "复盘总结", "我的战报", "历史总结"]):
+        return _handle_insight(sid)
 
     # 进入排障流
     if intent == "ON_SITE_TROUBLESHOOT":
@@ -285,6 +347,7 @@ def prepare(message: str, session_id: str | None, now: datetime | None = None) -
         weather = get_hourly(ctx.location, now)
         plan = build_plan(ctx, weather, hazards, now, profile)
         plan.session_id = sid
+        plan.history_note = _similar_history(plan.target_species)
         plan = _persist_plan(plan, session)
         return {"type": "plan", "reply": None, "plan": plan, "session_id": sid}
 
@@ -297,6 +360,7 @@ def prepare(message: str, session_id: str | None, now: datetime | None = None) -
     weather = get_hourly(ctx.location, now)
     plan = build_plan(ctx, weather, hazards, now, profile)
     plan.session_id = sid
+    plan.history_note = _similar_history(plan.target_species)
     plan = _persist_plan(plan, session)
     return {"type": "plan", "reply": None, "plan": plan, "session_id": sid}
 

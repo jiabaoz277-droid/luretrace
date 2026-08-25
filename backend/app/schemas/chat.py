@@ -74,6 +74,7 @@ class PlanData(BaseModel):
     risks: list[str] = Field(default_factory=list)
     safety: list[str] = Field(default_factory=list)
     data_basis: dict[str, Any] = Field(default_factory=dict)
+    history_note: Optional[str] = None
 
 
 class ChatDonePayload(BaseModel):

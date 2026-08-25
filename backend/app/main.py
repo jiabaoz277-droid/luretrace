@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import chat, plans, profile, reports
+from .api import chat, insights, plans, profile, reports, spots
 from .core import db
 from .core.config import settings
 from .services import llm
@@ -33,6 +33,8 @@ app.include_router(chat.router, prefix=settings.api_prefix)
 app.include_router(plans.router, prefix=settings.api_prefix)
 app.include_router(profile.router, prefix=settings.api_prefix)
 app.include_router(reports.router, prefix=settings.api_prefix)
+app.include_router(spots.router, prefix=settings.api_prefix)
+app.include_router(insights.router, prefix=settings.api_prefix)
 
 
 @app.get("/api/v1/health")

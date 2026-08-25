@@ -22,6 +22,7 @@ class CatchReport(Base):
     __tablename__ = "catch_reports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), default="default", index=True)
     session_id: Mapped[str] = mapped_column(String(64), index=True)
     plan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     result_type: Mapped[str] = mapped_column(String(24), default="skunked")

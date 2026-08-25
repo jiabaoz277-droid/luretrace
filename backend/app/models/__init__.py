@@ -2,5 +2,6 @@
 from .plan import Base, Plan
 from .profile import Profile
 from .report import CatchReport
+from .spot import FavoriteSpot
 
-__all__ = ["Base", "Plan", "Profile", "CatchReport"]
+__all__ = ["Base", "Plan", "Profile", "CatchReport", "FavoriteSpot"]

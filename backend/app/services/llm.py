@@ -364,3 +364,51 @@ def _template_review(report: dict) -> str:
     else:
         parts.append("本次有效要素已记录，下次可在相似窗口和标点继续验证。")
     return "".join(parts)
+
+
+# ---------- 个性化经验总结（第 3 阶段） ----------
+
+_INSIGHT_SYSTEM = """你是"路亚问问"的个性化总结助手。基于用户战报统计，生成简短总结：
+1. 结果分布与常钓目标鱼；
+2. 只使用提供的数据，不编造；
+3. 给出一个下次优先尝试的建议；
+4. 不超过 100 字。"""
+
+
+def generate_insight_llm(stats: dict) -> str:
+    user = json.dumps(stats, ensure_ascii=False)
+    raw = chat_completion(
+        [
+            {"role": "system", "content": _INSIGHT_SYSTEM},
+            {"role": "user", "content": f"根据以下战报统计生成个性化总结：\n{user}"},
+        ],
+        temperature=0.3,
+        max_tokens=200,
+    )
+    return raw.strip()
+
+
+def insight_for_stats(stats: dict) -> str:
+    if is_configured():
+        try:
+            text = generate_insight_llm(stats)
+            if text:
+                return text
+        except Exception:  # noqa: BLE001
+            pass
+    return _template_insight(stats)
+
+
+def _template_insight(stats: dict) -> str:
+    total = stats.get("total", 0)
+    if total == 0:
+        return "你还没有战报记录。去钓一场后，用“记一下今天的战报”告诉我结果，我就能帮你总结规律。"
+    parts = [f"你共记录了 {total} 次战报。"]
+    dist = stats.get("result_dist") or {}
+    if dist:
+        parts.append("结果分布：" + "、".join(f"{k}{v}次" for k, v in dist.items()) + "。")
+    top = stats.get("top_species") or []
+    if top:
+        parts.append("常钓目标鱼：" + "、".join(f"{s['species']}({s['count']}次)" for s in top) + "。")
+    parts.append("持续记录，我会越来越懂你的水情和鱼口规律。")
+    return "".join(parts)

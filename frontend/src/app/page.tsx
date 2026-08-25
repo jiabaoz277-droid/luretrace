@@ -34,6 +34,7 @@ type Plan = {
   risks: string[];
   safety: string[];
   data_basis: Record<string, unknown>;
+  history_note?: string | null;
 };
 
 type Step = { action: string; duration: string; upgrade: string };
@@ -49,6 +50,13 @@ type Report = {
   review_confirmed: boolean;
 };
 
+type InsightStats = {
+  total: number;
+  result_dist: Record<string, number>;
+  top_species: { species: string; count: number }[];
+  recent: Report[];
+};
+
 type Msg = {
   role: "user" | "assistant";
   content: string;
@@ -57,6 +65,7 @@ type Msg = {
   steps?: Step[];
   report?: Report | null;
   quick_options?: string[];
+  insight?: InsightStats | null;
   error?: string;
 };
 
@@ -65,6 +74,7 @@ const QUICK_QUESTIONS = [
   "明早杭州周边两小时打翘嘴",
   "到水边没口",
   "记一下今天的战报",
+  "我的规律",
 ];
 
 const CONCLUSION_TEXT: Record<Plan["conclusion"], string> = {
@@ -153,6 +163,7 @@ export default function Home() {
                 steps: p.steps ?? undefined,
                 report: p.report ?? null,
                 quick_options: p.quick_options ?? undefined,
+                insight: p.insight ?? null,
               }));
             } else if (data.type === "error") {
               updateLastAssistant((m) => ({
@@ -220,6 +231,7 @@ export default function Home() {
               {m.plan && <PlanCard plan={m.plan} />}
               {m.steps && <StepsCard steps={m.steps} />}
               {m.report && <ReportCard report={m.report} onConfirm={() => send("确认")} onCancel={() => send("取消")} />}
+              {m.insight && <InsightCard insight={m.insight} />}
               {m.quick_options && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {m.quick_options.map((q) => (
@@ -303,6 +315,7 @@ function PlanCard({ plan }: { plan: Plan }) {
       {plan.factors?.length > 0 && <p className="mt-2 text-gray-500">依据：{plan.factors.slice(0, 3).join("；")}</p>}
       {plan.risks?.length > 0 && <p className="mt-1 text-amber-600">注意：{plan.risks.join("；")}</p>}
       {plan.safety?.length > 0 && <p className="mt-1 font-medium text-red-600">安全：{plan.safety.join("；")}</p>}
+      {plan.history_note && <p className="mt-1 text-blue-600">📖 {plan.history_note}</p>}
     </div>
   );
 }
@@ -346,6 +359,24 @@ function ReportCard({ report, onConfirm, onCancel }: { report: Report; onConfirm
             取消
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+function InsightCard({ insight }: { insight: InsightStats }) {
+  return (
+    <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+      <p className="mb-1 font-medium">📊 我的规律（共 {insight.total} 次战报）</p>
+      {Object.keys(insight.result_dist).length > 0 && (
+        <p className="text-gray-500">
+          结果分布：{Object.entries(insight.result_dist).map(([k, v]) => `${k}${v}次`).join("、")}
+        </p>
+      )}
+      {insight.top_species?.length > 0 && (
+        <p className="text-gray-500">
+          常钓目标鱼：{insight.top_species.map((s) => `${s.species}(${s.count}次)`).join("、")}
+        </p>
       )}
     </div>
   );
