@@ -1,72 +1,100 @@
-"""天气/日照查询：真实数据（和风天气）优先，mock 降级。
+"""天气/日照查询：真实数据（和风天气新版 API）优先，mock 降级。
 
-返回结构保持不变（meta/hourly/sunrise/sunset），上层决策引擎无需改动。
+新版和风 API：专属 API Host + X-QW-Api-Key 认证；
+- 逐小时：/weather/v1/hourly/{lat}/{lon}
+- 每日（含日出日落）：/weather/v1/daily/{lat}/{lon}
+返回结构保持 meta/hourly/sunrise/sunset 不变，上层无需改动。
 """
 from __future__ import annotations
 
 import re
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 
 import httpx
 
 from ..core.config import settings
 from . import geo
 
-_WEATHER_URL = "https://devapi.qweather.com/v7/weather/24h"
-_SUN_URL = "https://devapi.qweather.com/v7/astronomy/sun"
+_WIND_ZH = {
+    "n": "北风", "ne": "东北风", "e": "东风", "se": "东南风",
+    "s": "南风", "sw": "西南风", "w": "西风", "nw": "西北风",
+}
 
 
 def get_hourly(location: str | None, target_date: datetime | None = None) -> dict:
-    """优先真实天气；无 Key、地点无效或调用失败时降级 mock。"""
+    """优先真实天气；无 Key/Host、地点无效或调用失败时降级 mock。"""
     if target_date is None:
         target_date = datetime.now()
-    real = _get_real(location, target_date)
+    real = _get_real(location)
     if real is not None:
         return real
     return _mock(location, target_date)
 
 
-def _get_real(location: str | None, target_date: datetime) -> dict | None:
+def _get_real(location: str | None) -> dict | None:
     if not geo.is_configured() or not location:
         return None
     try:
         place = geo.lookup_location(location)
-        if not place:
+        if not place or not place.get("lat") or not place.get("lon"):
             return None
+        host = settings.qweather_api_host
+        headers = {"X-QW-Api-Key": settings.qweather_key}
+        lat, lon = place["lat"], place["lon"]
 
-        resp = httpx.get(
-            _WEATHER_URL,
-            params={"location": place["id"], "key": settings.qweather_key},
+        # 逐小时
+        r1 = httpx.get(
+            f"https://{host}/weather/v1/hourly/{lat}/{lon}",
+            params={"hours": 24, "lang": "zh", "localTime": "true"},
+            headers=headers,
             timeout=10.0,
         )
-        data = resp.json()
-        if data.get("code") != "200" or not data.get("hourly"):
+        d1 = r1.json()
+        hours_raw = d1.get("hours")
+        if not hours_raw:
             return None
-        hourly_raw = data["hourly"]
+
+        # 日出日落（每日预报含 astro）
+        sunrise, sunset = "06:00", "18:00"
+        try:
+            r2 = httpx.get(
+                f"https://{host}/weather/v1/daily/{lat}/{lon}",
+                params={"days": 1, "lang": "zh", "localTime": "true"},
+                headers=headers,
+                timeout=10.0,
+            )
+            d2 = r2.json()
+            days = d2.get("days")
+            if days:
+                astro = days[0].get("astro") or {}
+                sunrise = _hhmm(astro.get("sunrise")) or sunrise
+                sunset = _hhmm(astro.get("sunset")) or sunset
+        except Exception:  # noqa: BLE001
+            pass
 
         hourly = []
-        for i, h in enumerate(hourly_raw):
-            prev = hourly_raw[i - 1]["pressure"] if i > 0 else h["pressure"]
+        for i, h in enumerate(hours_raw):
+            pressure = _num(h.get("pressure", {}).get("value"))
+            prev = _num(hours_raw[i - 1].get("pressure", {}).get("value")) if i > 0 else pressure
             hourly.append(
                 {
-                    "time": h["fxTime"],
-                    "temp": int(h.get("temp", 0)),
-                    "precip_prob": int(h.get("pop", 0)),
-                    "wind_scale": _wind_scale(h.get("windScale", "")),
-                    "wind_dir": h.get("windDir", ""),
-                    "pressure": int(h.get("pressure", 0)),
-                    "pressure_trend": _trend(prev, h.get("pressure", 0)),
-                    "condition": h.get("text", ""),
+                    "time": h.get("forecastTime", ""),
+                    "temp": round(_num(h.get("temperature", {}).get("value"))),
+                    "precip_prob": round(_num(h.get("precipitation", {}).get("probability")) * 100),
+                    "wind_scale": _num(h.get("wind", {}).get("scale")),
+                    "wind_dir": _wind_zh(h.get("wind", {}).get("direction", {}).get("compass")),
+                    "pressure": pressure,
+                    "pressure_trend": _trend(prev, pressure),
+                    "condition": h.get("condition", {}).get("text", ""),
                 }
             )
 
-        sunrise, sunset = _get_sun(place["id"], target_date)
         return {
             "meta": {
                 "location": place.get("name", location),
                 "source": "qweather",
                 "mock": False,
-                "updated_at": data.get("updateTime") or datetime.now().isoformat(timespec="minutes"),
+                "updated_at": datetime.now().isoformat(timespec="minutes"),
             },
             "sunrise": sunrise,
             "sunset": sunset,
@@ -76,44 +104,34 @@ def _get_real(location: str | None, target_date: datetime) -> dict | None:
         return None
 
 
-def _get_sun(location_id: str, target_date: datetime) -> tuple[str, str]:
+def _num(v) -> float:
     try:
-        resp = httpx.get(
-            _SUN_URL,
-            params={
-                "location": location_id,
-                "date": target_date.strftime("%Y%m%d"),
-                "key": settings.qweather_key,
-            },
-            timeout=10.0,
-        )
-        data = resp.json()
-        return data.get("sunrise", "06:00"), data.get("sunset", "18:00")
-    except Exception:  # noqa: BLE001
-        return "06:00", "18:00"
-
-
-def _wind_scale(raw: str | int) -> int:
-    if isinstance(raw, int):
-        return raw
-    m = re.search(r"\d+", str(raw))
-    return int(m.group()) if m else 0
-
-
-def _trend(prev: str | int, cur: str | int) -> str:
-    try:
-        p, c = int(prev), int(cur)
-        if c > p:
-            return "缓升"
-        if c < p:
-            return "下降"
+        return float(v)
     except (TypeError, ValueError):
-        pass
+        return 0.0
+
+
+def _wind_zh(compass) -> str:
+    return _WIND_ZH.get(str(compass).lower(), str(compass) or "—")
+
+
+def _hhmm(iso: str | None) -> str | None:
+    if not iso:
+        return None
+    m = re.search(r"T(\d{2}:\d{2})", str(iso))
+    return m.group(1) if m else None
+
+
+def _trend(prev: float, cur: float) -> str:
+    if cur > prev + 0.1:
+        return "缓升"
+    if cur < prev - 0.1:
+        return "下降"
     return "平稳"
 
 
 def _mock(location: str | None, target_date: datetime) -> dict:
-    """确定性 mock：供无 Key 或真实数据失败时降级。"""
+    """确定性 mock：供无 Key/Host 或真实数据失败时降级。"""
     day = target_date.date()
     seed = day.day % 7
     hourly = []

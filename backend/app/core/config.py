@@ -16,6 +16,7 @@ class Settings:
         self.model_name: str = os.getenv("MODEL_NAME", "")
         # 真实天气/地理数据源（和风天气 QWeather，免费额度）
         self.qweather_key: str = os.getenv("QWEATHER_KEY", "")
+        self.qweather_api_host: str = os.getenv("QWEATHER_API_HOST", "")  # 专属 API Host，如 xxx.qweatherapi.com
         self.database_url: str = os.getenv(
             "DATABASE_URL", f"sqlite:///{BASE_DIR / 'data' / 'fishing.db'}"
         )
