@@ -66,7 +66,7 @@ def test_decision_uses_profile_lures():
     profile = ProfileData(lures=["7g亮片", "米诺"])
     plan = build_plan(_ctx(), get_hourly("杭州"), [], profile=profile)
     assert plan.plan_detail.primary_lure == "7g亮片"
-    assert plan.plan_detail.backup_lure == "米诺"
+    assert plan.plan_detail.backup_lure == "亮片"  # 备选为鱼种推荐拟饵
     assert any("常用拟饵" in f for f in plan.factors)
 
 

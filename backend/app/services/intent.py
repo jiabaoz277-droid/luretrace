@@ -211,7 +211,7 @@ def detect_intent(text: str) -> IntentType:
         return "ON_SITE_TROUBLESHOOT"
     if any(k in text for k in ["禁钓", "能不能钓", "违规", "雷暴", "安全吗", "危险"]):
         return "SAFETY_OR_RULES"
-    if any(k in text for k in ["是什么", "为什么", "习性", "介绍", "什么是", "怎么区分"]):
+    if any(k in text for k in ["是什么", "为什么", "习性", "介绍", "什么是", "怎么区分", "怎么钓", "怎么路亚", "如何钓", "能路亚吗", "能不能路亚", "可以路亚吗", "适合路亚吗", "好路亚吗"]):
         return "KNOWLEDGE_QA"
     if any(k in text for k in ["什么饵", "怎么配", "用什么", "装备", "竿", "怎么打", "拟饵", "搭配"]):
         return "TACKLE_ADVICE"

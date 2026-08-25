@@ -160,9 +160,9 @@ def build_plan(
     backup = lures[1] if len(lures) > 1 else None
     if profile_lures:
         primary = {"type": profile_lures[0], "weight": "按你的装备", "color": "常用", "action": primary["action"]}
-        if len(profile_lures) > 1:
-            backup = {"type": profile_lures[1], "weight": "按你的装备", "color": "常用", "action": backup["action"] if backup else primary["action"]}
+        backup = lures[0]  # 备选保留鱼种推荐拟饵，避免用户装备不适配目标鱼时无解
         factors.append("已优先使用你的常用拟饵")
+        risks.append("若 10 分钟无口，可换该鱼推荐拟饵再试")
     detail = PlanDetail(
         spot_type=k["spots"][0],
         water_layer=k["water_layer"],
