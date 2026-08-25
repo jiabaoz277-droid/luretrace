@@ -22,6 +22,7 @@ from .intent import (
     extract_slots,
     missing_slots,
 )
+from .knowledge import recommend_species
 from .profile import get_profile
 from .weather import get_hourly
 
@@ -354,6 +355,18 @@ def prepare(message: str, session_id: str | None, now: datetime | None = None) -
     missing = missing_slots(ctx)
     if missing:
         top = missing[0]
+        # 目标鱼未知：按季节推荐候选，而非反问（PRD 10.2「不必总问，可给候选」）
+        if top == "target_species":
+            candidates = recommend_species(now.month)
+            where = ctx.location or "这个季节"
+            reply = f"{where} {now.month} 月适合打：{'、'.join(candidates)}，选一个我帮你出方案。"
+            return {
+                "type": "clarify",
+                "reply": reply,
+                "missing": ["target_species"],
+                "quick_options": candidates,
+                "session_id": sid,
+            }
         return {"type": "clarify", "reply": llm.reply_for_clarify(top), "missing": [top], "session_id": sid}
 
     # 生成方案

@@ -102,3 +102,12 @@ def test_error_event_structure(client):
     assert r.status_code == 422
     body = r.json()
     assert "detail" in body
+
+
+def test_recommend_species_when_unknown(client):
+    """问「武汉明天适合钓什么鱼」→ 推荐候选鱼种，而非反问。"""
+    r = client.post("/api/v1/chat", json={"message": "武汉明天适合钓什么鱼"})
+    done = _last_done(_parse_sse(r.text))
+    assert done["payload"]["type"] == "clarify"
+    assert "适合打" in done["payload"]["reply"]
+    assert done["payload"]["quick_options"], "应有候选鱼种供一键选择"

@@ -230,6 +230,23 @@ SPECIES_KNOWLEDGE: dict[str, dict] = {
     },
 }
 
+# 季节 → 推荐目标鱼（中国大陆淡水路亚，按月份）
+SEASON_SPECIES: dict[tuple[int, ...], list[str]] = {
+    (3, 4, 5): ["翘嘴", "鳜鱼", "鲈鱼", "马口"],
+    (6, 7, 8): ["翘嘴", "鳜鱼", "鲈鱼", "黑鱼", "白条"],
+    (9, 10, 11): ["翘嘴", "鳜鱼", "鲈鱼", "红尾"],
+    (12, 1, 2): ["翘嘴", "鳜鱼"],
+}
+
+
+def recommend_species(month: int) -> list[str]:
+    """按月份推荐候选目标鱼（最多 3 个）。"""
+    for months, species in SEASON_SPECIES.items():
+        if month in months:
+            return species[:3]
+    return ["翘嘴", "鳜鱼", "鲈鱼"]
+
+
 # 目标鱼别名 → 规范名
 SPECIES_ALIASES = {
     "翘嘴": "翘嘴", "翘嘴鱼": "翘嘴", "白丝": "翘嘴", "撅嘴": "翘嘴",
