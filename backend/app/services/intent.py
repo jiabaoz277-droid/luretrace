@@ -84,6 +84,7 @@ _TIME_SLOT = {
     "凌晨": (0, 5), "清晨": (5, 7), "早上": (5, 9), "早晨": (5, 9),
     "上午": (8, 11), "中午": (11, 13), "下午": (13, 18), "傍晚": (17, 19),
     "晚上": (18, 22), "夜间": (20, 23), "夜里": (20, 23),
+    "下班后": (18, 22), "半夜": (20, 23), "一早": (5, 9), "大清早": (5, 9), "午后": (13, 18),
 }
 
 
@@ -124,9 +125,12 @@ def _parse_time(text: str, now: datetime) -> dict | None:
                 start_hour, end_hour = a, b
                 break
     if start_hour is None:
-        # 只有日期没有时段 → 默认清晨窗口（路亚最常见）
+        # 只有日期没有时段 → 按“早/晚/晨”推断默认窗口，否则默认清晨（路亚最常见）
         if date_key is not None:
-            start_hour, end_hour = 5, 9
+            if "晚" in date_key or "夜" in date_key:
+                start_hour, end_hour = 18, 22
+            else:
+                start_hour, end_hour = 5, 9
     if start_hour is None:
         return None
 

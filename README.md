@@ -65,6 +65,18 @@ cd backend
 
 覆盖：意图/槽位解析、决策引擎（含安全优先）、SSE 端到端、方案卡持久化。
 
+## 槽位抽取验收评测（FR-01）
+
+100 条语料（50 标准 + 50 边界/难例），验证地点/目标鱼/时间三槽位：
+
+```bash
+cd backend
+.venv/bin/python -m eval.eval_slots --offline   # 仅规则，离线
+.venv/bin/python -m eval.eval_slots            # 规则 + LLM 增强
+```
+
+结果（2026-08-25）：标准语料三槽位完全正确率 100%（目标 ≥90%）；规则+LLM 难例 100%。
+
 ## 第二层真实冒烟（待 Key）
 
 接入真实模型后，用 `curl -N` 验证 SSE：

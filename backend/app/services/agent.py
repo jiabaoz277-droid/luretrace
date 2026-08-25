@@ -94,6 +94,17 @@ def _extract_species(text: str) -> str | None:
     return None
 
 
+def extract_merged_slots(message: str, now: datetime | None = None) -> FishingContext:
+    """规则优先 + 条件 LLM 增强的槽位抽取（对话与评测复用）。"""
+    now = now or datetime.now()
+    new_slots = extract_slots(message, now)
+    if llm.is_configured() and (not new_slots.location or not new_slots.target_species):
+        llm_slots = llm.extract_slots_llm(message, now)
+        if llm_slots is not None:
+            new_slots = _merge(new_slots, llm_slots)
+    return new_slots
+
+
 def prepare(message: str, session_id: str | None, now: datetime | None = None) -> dict:
     """同步完成意图/槽位/决策/持久化，返回结果。
 
@@ -123,12 +134,8 @@ def prepare(message: str, session_id: str | None, now: datetime | None = None) -
             "session_id": sid,
         }
 
-    # 决策流：先规则抽取；规则未抽到关键槽位时再用 LLM 增强（省一次调用、降首字延迟）
-    new_slots = extract_slots(message, now)
-    if llm.is_configured() and (not new_slots.location or not new_slots.target_species):
-        llm_slots = llm.extract_slots_llm(message, now)
-        if llm_slots is not None:
-            new_slots = _merge(new_slots, llm_slots)
+    # 决策流：抽取并合并槽位（规则优先 + 条件 LLM 增强）
+    new_slots = extract_merged_slots(message, now)
     ctx = _merge(session["context"], new_slots)
     session["context"] = ctx
 
