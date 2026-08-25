@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from ..schemas.chat import FishingContext, PlanData, PlanDetail
+from . import tackle
 from .knowledge import get_species
 
 # 安全阈值（可配置，本阶段先冻结）
@@ -158,9 +159,22 @@ def build_plan(
     if avoid_methods:
         risks.append(f"你标记了不愿用：{'、'.join(avoid_methods)}，方案如有涉及请自行调整")
 
+    # 竿调性 → 拟饵克重建议（FR-06）
+    rod_action = None
+    rod_range = None
+    if profile and profile.rods:
+        rod_action = tackle.parse_rod_action(profile.rods)
+        rod_range = tackle.weight_range_for(rod_action)
+
     lures = k["lures"]
     primary = lures[0]
     backup = lures[1] if len(lures) > 1 else None
+
+    if rod_action and rod_range:
+        factors.append(f"你的 {rod_action} 竿适合 {rod_range[0]:g}–{rod_range[1]:g}g 拟饵")
+        rec = tackle.parse_weight(primary["weight"])
+        if rec and (rec[1] < rod_range[0] or rec[0] > rod_range[1]):
+            risks.append(f"该鱼推荐 {primary['weight']}，可能超出你 {rod_action} 竿的舒适范围")
     if profile_lures:
         primary = {"type": profile_lures[0], "weight": "按你的装备", "color": "常用", "action": primary["action"]}
         backup = lures[0]  # 备选保留鱼种推荐拟饵，避免用户装备不适配目标鱼时无解
