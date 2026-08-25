@@ -16,8 +16,10 @@ from ..core.config import settings
 from . import geo
 
 _WIND_ZH = {
-    "n": "北风", "ne": "东北风", "e": "东风", "se": "东南风",
-    "s": "南风", "sw": "西南风", "w": "西风", "nw": "西北风",
+    "n": "北风", "nne": "北东北风", "ne": "东北风", "ene": "东东北风",
+    "e": "东风", "ese": "东东南风", "se": "东南风", "sse": "南东南风",
+    "s": "南风", "ssw": "南西南风", "sw": "西南风", "wsw": "西西南风",
+    "w": "西风", "wnw": "西西北风", "nw": "西北风", "nnw": "北西北风",
 }
 
 
@@ -81,7 +83,7 @@ def _get_real(location: str | None) -> dict | None:
                     "time": h.get("forecastTime", ""),
                     "temp": round(_num(h.get("temperature", {}).get("value"))),
                     "precip_prob": round(_num(h.get("precipitation", {}).get("probability")) * 100),
-                    "wind_scale": _num(h.get("wind", {}).get("scale")),
+                    "wind_scale": int(_num(h.get("wind", {}).get("scale"))),
                     "wind_dir": _wind_zh(h.get("wind", {}).get("direction", {}).get("compass")),
                     "pressure": pressure,
                     "pressure_trend": _trend(prev, pressure),
