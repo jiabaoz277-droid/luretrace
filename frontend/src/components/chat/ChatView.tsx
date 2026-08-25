@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Fish } from "lucide-react";
+import { Fish, MapPin } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 import type { Msg } from "@/types/api";
 import { MessageBubble } from "./MessageBubble";
 
@@ -23,11 +24,37 @@ export function ChatView({
   onSend: (text: string) => void;
 }) {
   const [input, setInput] = useState("");
+  const [locating, setLocating] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  async function locate() {
+    if (!("geolocation" in navigator)) {
+      alert("当前浏览器不支持定位，请手动输入城市或水域");
+      return;
+    }
+    setLocating(true);
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+      });
+      const { latitude, longitude } = pos.coords;
+      const res = await fetch(`${API_BASE}/api/v1/geo/reverse?lat=${latitude}&lon=${longitude}`);
+      const data = await res.json();
+      if (data.name) {
+        onSend(data.name);
+      } else {
+        alert("定位失败，请手动输入城市");
+      }
+    } catch {
+      alert("无法获取位置（可能未授权），请手动输入城市或水域");
+    } finally {
+      setLocating(false);
+    }
+  }
 
   return (
     <>
@@ -50,6 +77,14 @@ export function ChatView({
 
       <footer className="border-t border-line bg-surface p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+          <button
+            onClick={locate}
+            disabled={loading || locating}
+            className="flex shrink-0 items-center gap-1 rounded-full border border-daiwa bg-daiwa/5 px-3 py-1 text-xs font-medium text-daiwa disabled:opacity-50"
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            {locating ? "定位中…" : "当前位置"}
+          </button>
           {QUICK_QUESTIONS.map((q) => (
             <button
               key={q}

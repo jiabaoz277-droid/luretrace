@@ -38,3 +38,33 @@ def lookup_location(text: str) -> dict | None:
     except Exception:  # noqa: BLE001
         pass
     return None
+
+
+def reverse_lookup(lat: float, lon: float) -> dict | None:
+    """经纬度 → 地点（逆地理编码）；失败返回 None。"""
+    if not is_configured():
+        return None
+    try:
+        url = f"https://{settings.qweather_api_host}/geo/v2/city/lookup"
+        # 和风 GeoAPI 支持 "经度,纬度" 坐标反查
+        resp = httpx.get(
+            url,
+            params={"location": f"{lon},{lat}", "lang": "zh"},
+            headers=_headers(),
+            timeout=10.0,
+        )
+        data = resp.json()
+        if data.get("location"):
+            loc = data["location"][0]
+            return {
+                "id": loc.get("id"),
+                "name": loc.get("adm2") or loc.get("name"),  # 市级优先，更符合用户认知
+                "district": loc.get("name"),  # 区级保留
+                "adm2": loc.get("adm2"),
+                "adm1": loc.get("adm1"),
+                "lat": loc.get("lat"),
+                "lon": loc.get("lon"),
+            }
+    except Exception:  # noqa: BLE001
+        pass
+    return None
