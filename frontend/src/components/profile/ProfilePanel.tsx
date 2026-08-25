@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { useProfile } from "@/hooks/useProfile";
 import type { ProfileData } from "@/types/api";
@@ -97,9 +98,10 @@ function ProfileForm({
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            className="flex-1 rounded-full bg-daiwa py-2.5 text-sm font-semibold text-white"
+            className="flex flex-1 items-center justify-center gap-1 rounded-full bg-daiwa py-2.5 text-sm font-semibold text-white"
           >
-            {saved ? "已保存 ✓" : "保存"}
+            {saved && <Check className="h-4 w-4" />}
+            {saved ? "已保存" : "保存"}
           </button>
           <button
             onClick={onClose}

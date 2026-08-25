@@ -1,3 +1,4 @@
+import { History } from "lucide-react";
 import type { Plan } from "@/types/api";
 
 const CONCLUSION_TEXT: Record<Plan["conclusion"], string> = {
@@ -51,7 +52,10 @@ export function PlanCard({ plan }: { plan: Plan }) {
         <p className="px-3 pb-1 text-xs font-semibold text-accent">安全：{plan.safety.join("；")}</p>
       )}
       {plan.history_note && (
-        <p className="px-3 pb-2 text-xs text-daiwa">📖 {plan.history_note}</p>
+        <p className="flex items-start gap-1 px-3 pb-2 text-xs text-daiwa">
+          <History className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {plan.history_note}
+        </p>
       )}
     </div>
   );

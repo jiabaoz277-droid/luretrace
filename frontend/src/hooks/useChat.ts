@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { Msg } from "@/types/api";
 import { API_BASE } from "@/lib/api";
+import { NETWORK_ERROR, toAppError } from "@/lib/errors";
 import { parseSSEEvent } from "@/lib/sse";
 
 /** 会话状态 + SSE 流式对话。 */
@@ -79,7 +80,7 @@ export function useChat() {
             } else if (ev.type === "error") {
               updateLastAssistant((m) => ({
                 ...m,
-                error: ev.error?.message || "出错了，请稍后重试",
+                error: toAppError(ev.error).userMessage,
               }));
             }
           }
@@ -93,7 +94,7 @@ export function useChat() {
       } catch {
         updateLastAssistant((m) => ({
           ...m,
-          error: "无法连接服务，请确认后端已启动（端口 8003）",
+          error: NETWORK_ERROR.userMessage,
         }));
       } finally {
         setLoading(false);

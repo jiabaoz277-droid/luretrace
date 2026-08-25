@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Fish } from "lucide-react";
 import type { Msg } from "@/types/api";
 import { MessageBubble } from "./MessageBubble";
 
@@ -33,7 +34,10 @@ export function ChatView({
       <main className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
           <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-soft">
-            <p className="mb-1 font-semibold text-ink">👋 告诉我你的出钓计划</p>
+            <div className="mb-1 flex items-center gap-2">
+              <Fish className="h-5 w-5 text-daiwa" />
+              <p className="font-semibold text-ink">告诉我你的出钓计划</p>
+            </div>
             <p>例：明早杭州周边两小时，想打翘嘴</p>
           </div>
         )}
