@@ -317,3 +317,50 @@ def reply_out_of_scope(intent: str) -> str:
     if intent == "CATCH_REVIEW":
         return "战报复盘将在后续阶段开放。本阶段可先帮你规划出钓方案。"
     return "这个问题暂未覆盖，你可以先问我“今天值得去吗”“去哪打翘嘴”等出钓决策问题。"
+
+
+# ---------- 战报复盘（FR-07） ----------
+
+_REVIEW_SYSTEM = """你是"路亚问问"的复盘助手。基于用户战报和关联计划，生成简短复盘：
+1. 哪些判断被验证、哪些可能失效；
+2. 下次优先尝试什么；
+3. 只使用提供的数据，不编造，不承诺“必中”；
+4. 不超过 80 字。"""
+
+
+def generate_review_llm(report: dict) -> str:
+    user = json.dumps(report, ensure_ascii=False)
+    raw = chat_completion(
+        [
+            {"role": "system", "content": _REVIEW_SYSTEM},
+            {"role": "user", "content": f"根据以下战报生成复盘：\n{user}"},
+        ],
+        temperature=0.3,
+        max_tokens=200,
+    )
+    return raw.strip()
+
+
+def review_for_report(report: dict) -> str:
+    if is_configured():
+        try:
+            text = generate_review_llm(report)
+            if text:
+                return text
+        except Exception:  # noqa: BLE001
+            pass
+    return _template_review(report)
+
+
+def _template_review(report: dict) -> str:
+    label = report.get("result_label") or report.get("result_type") or "未知"
+    parts = [f"本次结果：{label}。"]
+    if report.get("species"):
+        parts.append(f"目标鱼：{report['species']}。")
+    if report.get("lure"):
+        parts.append(f"用饵：{report['lure']}。")
+    if label in ("空军", "skunked"):
+        parts.append("可能因素：窗口、水层或标点与当天鱼情不匹配。下次优先对比低光窗口和风向再定标点，并保留记录以便校准。")
+    else:
+        parts.append("本次有效要素已记录，下次可在相似窗口和标点继续验证。")
+    return "".join(parts)

@@ -56,6 +56,12 @@ async def chat(req: ChatRequest) -> StreamingResponse:
                 payload["plan"] = result["plan"].model_dump()
             if result.get("missing"):
                 payload["missing"] = result["missing"]
+            if result.get("steps"):
+                payload["steps"] = result["steps"]
+            if result.get("report"):
+                payload["report"] = result["report"]
+            if result.get("quick_options"):
+                payload["quick_options"] = result["quick_options"]
             yield _sse({"type": "done", "session_id": sid, "payload": payload})
         except AppError as e:
             yield _sse({"type": "error", "error": {"code": e.code, "message": e.message}})

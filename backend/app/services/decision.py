@@ -33,6 +33,12 @@ def _fmt_window(start_h: int, end_h: int) -> str:
     return f"{start_h:02d}:00–{end_h:02d}:00"
 
 
+def _is_night_window(window: tuple[int, int]) -> bool:
+    """窗口是否跨越/落在夜间（20 点后或 5 点前）。"""
+    start, end = window
+    return start >= 20 or end <= 5 or start > end
+
+
 def _weather_score(weather: dict, window: tuple[int, int]) -> tuple[int, list[str]]:
     """对窗口内天气打分，返回 (score, factors)。"""
     factors: list[str] = []
@@ -84,6 +90,7 @@ def build_plan(
     weather: dict,
     hazards: list[str],
     now: datetime | None = None,
+    profile=None,
 ) -> PlanData:
     blocking = [h for h in hazards if h in _BLOCKING_HAZARDS]
     safety: list[str] = []
@@ -139,9 +146,23 @@ def build_plan(
         confidence = "low"
         risks.append("位置未知，仅给标点类型建议")
 
+    # 装备偏好联动（FR-06）：用户拟饵优先；车程限制作为默认约束
+    profile_lures = (profile.lures or []) if profile else []
+    profile_constraints = (profile.constraints or []) if profile else []
+    if profile and profile.max_travel_radius and not ctx.travel_radius:
+        ctx.travel_radius = profile.max_travel_radius
+        factors.append(f"按你的车程限制 {profile.max_travel_radius}")
+    if "不夜钓" in profile_constraints and _is_night_window(mw):
+        safety.append("你设置了不夜钓，建议优先晨昏窗口。")
+
     lures = k["lures"]
     primary = lures[0]
     backup = lures[1] if len(lures) > 1 else None
+    if profile_lures:
+        primary = {"type": profile_lures[0], "weight": "按你的装备", "color": "常用", "action": primary["action"]}
+        if len(profile_lures) > 1:
+            backup = {"type": profile_lures[1], "weight": "按你的装备", "color": "常用", "action": backup["action"] if backup else primary["action"]}
+        factors.append("已优先使用你的常用拟饵")
     detail = PlanDetail(
         spot_type=k["spots"][0],
         water_layer=k["water_layer"],

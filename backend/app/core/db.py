@@ -23,7 +23,7 @@ def get_engine():
 
 
 def init_db() -> None:
-    from ..models.plan import Base
+    from ..models import Base
 
     url = settings.database_url
     if url.startswith("sqlite:///"):

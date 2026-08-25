@@ -15,7 +15,10 @@ from app.services import agent  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _reset_state():
+    from app.models import Base
+
     agent._sessions.clear()
+    Base.metadata.drop_all(bind=db.get_engine())
     db.init_db()
     yield
 
