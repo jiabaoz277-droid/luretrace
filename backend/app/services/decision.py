@@ -149,11 +149,14 @@ def build_plan(
     # 装备偏好联动（FR-06）：用户拟饵优先；车程限制作为默认约束
     profile_lures = (profile.lures or []) if profile else []
     profile_constraints = (profile.constraints or []) if profile else []
+    avoid_methods = (profile.avoid_methods or []) if profile else []
     if profile and profile.max_travel_radius and not ctx.travel_radius:
         ctx.travel_radius = profile.max_travel_radius
         factors.append(f"按你的车程限制 {profile.max_travel_radius}")
     if "不夜钓" in profile_constraints and _is_night_window(mw):
         safety.append("你设置了不夜钓，建议优先晨昏窗口。")
+    if avoid_methods:
+        risks.append(f"你标记了不愿用：{'、'.join(avoid_methods)}，方案如有涉及请自行调整")
 
     lures = k["lures"]
     primary = lures[0]

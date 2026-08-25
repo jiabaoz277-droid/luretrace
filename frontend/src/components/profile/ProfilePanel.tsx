@@ -33,11 +33,17 @@ function ProfileForm({
   onSave: (p: ProfileData) => Promise<void>;
   onClose: () => void;
 }) {
+  const [rods, setRods] = useState((initial.rods || []).join("、"));
+  const [reels, setReels] = useState((initial.reels || []).join("、"));
+  const [lines, setLines] = useState((initial.lines || []).join("、"));
   const [lures, setLures] = useState((initial.lures || []).join("、"));
+  const [avoidMethods, setAvoidMethods] = useState((initial.avoid_methods || []).join("、"));
   const [radius, setRadius] = useState(initial.max_travel_radius || "");
   const [noNight, setNoNight] = useState((initial.constraints || []).includes("不夜钓"));
   const [noWading, setNoWading] = useState((initial.constraints || []).includes("不涉水"));
   const [saved, setSaved] = useState(false);
+
+  const split = (s: string) => s.split(/[,，、]/).map((x) => x.trim()).filter(Boolean);
 
   async function handleSave() {
     const constraints: string[] = [];
@@ -45,7 +51,11 @@ function ProfileForm({
     if (noWading) constraints.push("不涉水");
     await onSave({
       ...initial,
-      lures: lures.split(/[,，、]/).map((s) => s.trim()).filter(Boolean),
+      rods: split(rods),
+      reels: split(reels),
+      lines: split(lines),
+      lures: split(lures),
+      avoid_methods: split(avoidMethods),
       max_travel_radius: radius || null,
       constraints,
     });
@@ -65,11 +75,51 @@ function ProfileForm({
         </div>
 
         <label className="mb-3 block text-sm">
+          <span className="text-ink-soft">竿（型号/调性）</span>
+          <input
+            value={rods}
+            onChange={(e) => setRods(e.target.value)}
+            placeholder="如：ML调路亚竿、马口竿"
+            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
+          />
+        </label>
+
+        <label className="mb-3 block text-sm">
+          <span className="text-ink-soft">轮（型号/类型）</span>
+          <input
+            value={reels}
+            onChange={(e) => setReels(e.target.value)}
+            placeholder="如：纺车轮2500、水滴轮"
+            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
+          />
+        </label>
+
+        <label className="mb-3 block text-sm">
+          <span className="text-ink-soft">线（线号/材质）</span>
+          <input
+            value={lines}
+            onChange={(e) => setLines(e.target.value)}
+            placeholder="如：0.8号PE、1.5号尼龙"
+            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
+          />
+        </label>
+
+        <label className="mb-3 block text-sm">
           <span className="text-ink-soft">常用拟饵（逗号分隔）</span>
           <input
             value={lures}
             onChange={(e) => setLures(e.target.value)}
             placeholder="如：7g亮片、米诺"
+            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
+          />
+        </label>
+
+        <label className="mb-3 block text-sm">
+          <span className="text-ink-soft">不愿使用的钓法</span>
+          <input
+            value={avoidMethods}
+            onChange={(e) => setAvoidMethods(e.target.value)}
+            placeholder="如：雷强、微物（可留空）"
             className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
           />
         </label>
