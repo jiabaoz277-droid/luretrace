@@ -1,13 +1,20 @@
 @import "tailwindcss";
 
-:root {
-  --background: #f5f7f9;
-  --foreground: #171717;
+/* Daiwa 风格主题：黑白灰专业底 + 品牌蓝 + 红强调 */
+@theme {
+  --color-daiwa: #01559e;
+  --color-daiwa-dark: #00437a;
+  --color-accent: #e74c3c;
+  --color-ink: #101820;
+  --color-ink-soft: #6b7280;
+  --color-paper: #f4f4f2;
+  --color-surface: #ffffff;
+  --color-line: #e5e5e0;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
-    sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: Roboto, -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Microsoft YaHei", sans-serif;
 }
