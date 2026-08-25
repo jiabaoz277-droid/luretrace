@@ -119,8 +119,13 @@ def handle(message: str, session_id: str | None, now: datetime | None = None) ->
             "session_id": sid,
         }
 
-    # 决策流：抽取并合并槽位
-    ctx = _merge(session["context"], extract_slots(message, now))
+    # 决策流：规则抽取 +（已配置时）LLM 抽取，LLM 非空字段优先、规则兑底
+    new_slots = extract_slots(message, now)
+    if llm.is_configured():
+        llm_slots = llm.extract_slots_llm(message, now)
+        if llm_slots is not None:
+            new_slots = _merge(new_slots, llm_slots)
+    ctx = _merge(session["context"], new_slots)
     session["context"] = ctx
 
     # 高风险优先：跳过追问，立即给出安全结论

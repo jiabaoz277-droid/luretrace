@@ -1,10 +1,174 @@
-"""模型抽象层：开发期用模板 mock，真实 Key 接入后替换为 LLM 调用。
+"""模型抽象层：真实 LLM（OpenAI 兼容接口）优先，规则/模板兜底。
 
-真实 LLM 接入点：将 reply_* 函数改为调用 chat 模型，并用 Pydantic 校验结构化输出。
+- 已配置 Key：槽位抽取 + 自然语言回复走真实模型；决策引擎仍为确定性规则。
+- 未配置 Key 或调用失败：自动回退到确定性规则解析 + 模板回复，不影响核心链路。
+- 安全提示永远由确定性代码保证，不交给模型决定（安全优先于鱼口）。
 """
 from __future__ import annotations
 
-from ..schemas.chat import PlanData
+import json
+import re
+
+import httpx
+
+from ..core.config import settings
+from ..schemas.chat import FishingContext, PlanData
+from . import intent as intent_rules
+from .knowledge import get_species
+
+DEFAULT_BASE_URL = "https://api.deepseek.com"
+DEFAULT_MODEL = "deepseek-chat"
+_TIMEOUT = 30.0
+_MAX_RETRIES = 2
+
+
+def is_configured() -> bool:
+    return bool(settings.model_api_key)
+
+
+def _base_url() -> str:
+    return (settings.model_base_url or DEFAULT_BASE_URL).rstrip("/")
+
+
+def _model() -> str:
+    return settings.model_name or DEFAULT_MODEL
+
+
+def chat_completion(
+    messages: list[dict],
+    temperature: float = 0.3,
+    max_tokens: int = 800,
+    json_mode: bool = False,
+) -> str:
+    """调用 OpenAI 兼容接口，带有限重试；不把密钥或响应体中的敏感信息透出。"""
+    if not is_configured():
+        raise RuntimeError("未配置模型 API Key")
+    url = f"{_base_url()}/chat/completions"
+    payload: dict = {
+        "model": _model(),
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": False,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    headers = {
+        "Authorization": f"Bearer {settings.model_api_key}",
+        "Content-Type": "application/json",
+    }
+
+    last_err: Exception | None = None
+    for _ in range(_MAX_RETRIES + 1):
+        try:
+            with httpx.Client(timeout=_TIMEOUT) as client:
+                resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code == 401:
+                raise RuntimeError("API Key 无效或已过期，请检查 .env 中的 MODEL_API_KEY")
+            if resp.status_code == 402:
+                raise RuntimeError("模型账户额度不足，请充值后重试")
+            if resp.status_code == 429:
+                raise RuntimeError("触发模型限流，请稍后重试")
+            if resp.status_code >= 400:
+                raise RuntimeError(f"模型接口返回 {resp.status_code}")
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except RuntimeError:
+            raise  # 明确的业务错误直接抛出，不重试
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+    raise RuntimeError(f"模型调用失败（已重试 {_MAX_RETRIES} 次）：{type(last_err).__name__}")
+
+
+def _extract_json(text: str) -> str:
+    """宽容地提取 JSON：模型可能包在 ```json``` 或前后有解释文字。"""
+    text = text.strip()
+    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if m:
+        return m.group(1)
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start : end + 1]
+    return text
+
+
+_SLOT_SYSTEM = """你是"路亚问问"的槽位抽取器。从用户输入中抽取字段，只输出一个 JSON 对象，不要输出任何解释。
+字段规则（找不到就填 null 或 []）：
+- location: 出发城市或水域名，如 "杭州"、"富春江"
+- target_species: 目标鱼规范名（翘嘴/鳜鱼/鲈鱼/黑鱼/马口/白条/红尾/青稍/军鱼/罗非），口语要归一化
+- travel_radius: 出行限制，如 "2小时"、"40公里"
+- water_type: 江河/水库/湖泊/溪流
+- tackle: 装备原文（竿调、拟饵等），如 "ML竿、7g亮片"
+- constraints: 限制条件数组，如 ["不夜钓","带孩子"]
+- time_raw: 时间原文，如 "明早5点到9点"
+
+示例：
+输入："明早杭州周边两小时，想打翘嘴"
+输出：{"location":"杭州","target_species":"翘嘴","travel_radius":"2小时","water_type":null,"tackle":null,"constraints":[],"time_raw":"明早"}
+输入："我只有ML竿和7g亮片，不夜钓"
+输出：{"location":null,"target_species":null,"travel_radius":null,"water_type":null,"tackle":"ML竿、7g亮片","constraints":["不夜钓"],"time_raw":null}
+"""
+
+
+def extract_slots_llm(text: str, now) -> FishingContext | None:
+    """LLM 槽位抽取；失败返回 None（由调用方回退到规则解析）。"""
+    try:
+        raw = chat_completion(
+            [
+                {"role": "system", "content": _SLOT_SYSTEM},
+                {"role": "user", "content": text},
+            ],
+            temperature=0.0,
+            max_tokens=300,
+            json_mode=True,
+        )
+        data = json.loads(_extract_json(raw))
+        ctx = FishingContext(
+            location=data.get("location") or None,
+            target_species=data.get("target_species") or None,
+            travel_radius=data.get("travel_radius") or None,
+            water_type=data.get("water_type") or None,
+            tackle=data.get("tackle") or None,
+            constraints=[c for c in (data.get("constraints") or []) if isinstance(c, str)],
+        )
+        # 相对时间转绝对日期用确定性解析，不依赖模型算日期
+        rule_ctx = intent_rules.extract_slots(text, now)
+        ctx.time_window = rule_ctx.time_window
+        ctx.time_label = rule_ctx.time_label
+        ctx.start_iso = rule_ctx.start_iso
+        ctx.end_iso = rule_ctx.end_iso
+        return ctx
+    except Exception:  # noqa: BLE001
+        return None
+
+
+_REPLY_SYSTEM = """你是"路亚问问"，一个懂当地水情、天气、对象鱼和装备的路亚搭子。回答规则：
+1. 先结论后依据：先回答是否建议出钓、信心等级、最佳窗口。
+2. 事实、推断、建议分层：天气是事实，鱼口是概率，动作是建议。
+3. 只使用我提供的方案数据，绝不编造天气、钓点状态、法规或鱼情。
+4. 不承诺"必中鱼""爆护"等确定性结果。
+5. 简短可执行，正文不超过 120 字。
+"""
+
+
+def generate_reply_llm(plan: PlanData) -> str:
+    """基于方案数据生成自然语言回复。"""
+    user = json.dumps(plan.model_dump(), ensure_ascii=False)
+    raw = chat_completion(
+        [
+            {"role": "system", "content": _REPLY_SYSTEM},
+            {
+                "role": "user",
+                "content": f"根据以下方案数据，生成给用户的一句话回复（结论、窗口、方案要点）：\n{user}",
+            },
+        ],
+        temperature=0.3,
+        max_tokens=300,
+    )
+    return raw.strip()
+
+
+# ---------- 对外回复（带兜底） ----------
 
 
 def reply_for_clarify(missing: str) -> str:
@@ -16,12 +180,23 @@ def reply_for_clarify(missing: str) -> str:
 
 
 def reply_for_plan(plan: PlanData) -> str:
+    # 安全优先：no_go 时用确定性文案，不交给模型
+    if plan.conclusion == "no_go" and plan.safety:
+        return "⚠️ " + plan.safety[0]
+
+    if is_configured():
+        try:
+            text = generate_reply_llm(plan)
+            if text:
+                return text
+        except Exception:  # noqa: BLE001
+            pass  # 回退模板
+    return _template_reply(plan)
+
+
+def _template_reply(plan: PlanData) -> str:
     conclusion_text = {"go": "建议去", "conditional": "可去但窗口短", "no_go": "不建议"}
     lines = []
-    if plan.conclusion == "no_go" and plan.safety:
-        lines.append("⚠️ " + plan.safety[0])
-        return "\n".join(lines)
-
     head = conclusion_text[plan.conclusion]
     if plan.conclusion == "conditional":
         head += f"，只抓 {plan.best_window or '关键窗口'}"
@@ -29,7 +204,10 @@ def reply_for_plan(plan: PlanData) -> str:
     lines.append(head)
 
     if plan.best_window:
-        lines.append(f"最佳窗口：{plan.best_window}" + (f"；备选：{plan.backup_window}" if plan.backup_window else ""))
+        lines.append(
+            f"最佳窗口：{plan.best_window}"
+            + (f"；备选：{plan.backup_window}" if plan.backup_window else "")
+        )
 
     d = plan.plan_detail
     parts = [p for p in [d.spot_type, d.water_layer, d.primary_lure, d.weight_color, d.action] if p]
@@ -38,7 +216,6 @@ def reply_for_plan(plan: PlanData) -> str:
 
     if plan.factors:
         lines.append("依据：" + "；".join(plan.factors[:3]) + "。")
-
     if plan.risks:
         lines.append("注意：" + "；".join(plan.risks[:2]) + "。")
     if plan.safety:
@@ -48,8 +225,6 @@ def reply_for_plan(plan: PlanData) -> str:
 
 
 def reply_for_knowledge(species: str) -> str:
-    from .knowledge import get_species
-
     k = get_species(species)
     if not k:
         return "我还不太了解这种鱼，可以试试问翘嘴、鳜鱼、鲈鱼等常见淡水路亚对象鱼。"

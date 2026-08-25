@@ -77,6 +77,30 @@ curl -N -X POST http://127.0.0.1:8003/api/v1/chat \
 
 确认：首个 chunk 时间达标、事件以 `done` 或 `error` 正确收尾、失败时错误结构统一。
 
+## 接入真实模型（第二层冒烟）
+
+代码已就绪：填了 Key 后，槽位抽取 + 自然语言回复自动切换为真实模型；决策引擎和安全提示仍由确定性代码保证。未填 Key 时用规则 + 模板兜底，不影响运行。
+
+1. 申请 Key（二选一）：
+   - DeepSeek：<https://platform.deepseek.com> → 创建 API Key（默认 `deepseek-chat`）
+   - 火山方舟（豆包）：<https://console.volcengine.com/ark> → 开通并创建推理接入点
+2. 配置：
+   ```bash
+   cp .env.example .env
+   # 编辑 .env，填入 MODEL_API_KEY；用火山方舟则同时改 BASE_URL/MODEL_NAME
+   ```
+3. 重启后端，确认接入：
+   ```bash
+   curl http://127.0.0.1:8003/api/v1/model/status   # configured 应为 true
+   ```
+4. 真实模型冒烟：
+   ```bash
+   cd backend
+   .venv/bin/python -m pytest tests/test_real_model_smoke.py -v
+   ```
+
+> 注意：`.env` 已在 `.gitignore` 中，密钥不会被提交；对话、日志、命令输出中不回显密钥。
+
 ## 验收清单（第 1 阶段）
 
 - [ ] 打开 <http://localhost:3002>
