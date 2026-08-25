@@ -1,5 +1,5 @@
 """鱼种识别与知识库覆盖测试。"""
-from app.services.knowledge import get_species, normalize_species
+from app.services.knowledge import get_species, normalize_species, recommend_species, region_for_province
 
 
 def test_normalize_new_species():
@@ -39,3 +39,20 @@ def test_knowledge_covers_all():
 def test_original_species_still_work():
     for species in ["翘嘴", "鳜鱼", "鲈鱼", "黑鱼", "马口", "白条", "红尾", "青稍", "军鱼", "罗非"]:
         assert get_species(species) is not None
+
+
+def test_region_for_province():
+    assert region_for_province("湖北") == "南方"
+    assert region_for_province("黑龙江") == "北方"
+    assert region_for_province(None) == "全国"
+
+
+def test_recommend_species_by_region():
+    # 南方应含南方特色鱼，不含北方冷水鱼
+    south = recommend_species(8, "南方")
+    assert ("罗非" in south) or ("鳡鱼" in south)
+    assert "狗鱼" not in south and "虹鳟" not in south
+    # 北方应含北方冷水鱼，不含南方热带鱼
+    north = recommend_species(8, "北方")
+    assert ("狗鱼" in north) or ("虹鳟" in north)
+    assert "罗非" not in north and "鲮鱼" not in north

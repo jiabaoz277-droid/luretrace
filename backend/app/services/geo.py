@@ -32,6 +32,8 @@ def lookup_location(text: str) -> dict | None:
             return {
                 "id": loc.get("id"),
                 "name": loc.get("name", text),
+                "adm2": loc.get("adm2"),  # 地级市
+                "adm1": loc.get("adm1"),  # 省
                 "lat": loc.get("lat"),
                 "lon": loc.get("lon"),
             }

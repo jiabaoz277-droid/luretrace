@@ -14,6 +14,7 @@ from ..models.report import RESULT_LABELS, CatchReport
 from ..models.spot import FavoriteSpot
 from ..schemas.chat import FishingContext, PlanData
 from . import insights, llm, onsite
+from . import geo
 from .decision import build_plan
 from .intent import (
     SPECIES_ALIASES,
@@ -22,7 +23,7 @@ from .intent import (
     extract_slots,
     missing_slots,
 )
-from .knowledge import recommend_species
+from .knowledge import recommend_species, region_for_province
 from .profile import get_profile
 from .weather import get_hourly
 
@@ -355,9 +356,14 @@ def prepare(message: str, session_id: str | None, now: datetime | None = None) -
     missing = missing_slots(ctx)
     if missing:
         top = missing[0]
-        # 目标鱼未知：按季节推荐候选，而非反问（PRD 10.2「不必总问，可给候选」）
+        # 目标鱼未知：按季节 + 地域推荐候选，而非反问（PRD 10.2「不必总问，可给候选」）
         if top == "target_species":
-            candidates = recommend_species(now.month)
+            region = "全国"
+            if ctx.location:
+                place = geo.lookup_location(ctx.location)
+                if place and place.get("adm1"):
+                    region = region_for_province(place["adm1"])
+            candidates = recommend_species(now.month, region)
             where = ctx.location or "这个季节"
             reply = f"{where} {now.month} 月适合打：{'、'.join(candidates)}，选一个我帮你出方案。"
             return {

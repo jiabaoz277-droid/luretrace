@@ -12,6 +12,10 @@ from app.services import llm
 @pytest.fixture(autouse=True)
 def _offline_llm(monkeypatch):
     monkeypatch.setattr(llm, "is_configured", lambda: False)
+    # 地域推荐时不调真实 geo API，保持离线稳定
+    from app.services import geo
+
+    monkeypatch.setattr(geo, "is_configured", lambda: False)
     yield
 
 

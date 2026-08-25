@@ -238,13 +238,60 @@ SEASON_SPECIES: dict[tuple[int, ...], list[str]] = {
     (12, 1, 2): ["翘嘴", "鳜鱼"],
 }
 
+# 鱼种地域分布：全国 / 南方（热带亚热带） / 北方（冷水）
+SPECIES_REGIONS: dict[str, str] = {
+    "翘嘴": "全国", "鳜鱼": "全国", "鲈鱼": "全国", "黑鱼": "全国",
+    "白条": "全国", "马口": "全国", "青稍": "全国", "赤眼鳟": "全国",
+    "鳊鱼": "全国", "草鱼": "全国", "鲤鱼": "全国", "鲫鱼": "全国",
+    "鲶鱼": "全国", "黄颡鱼": "全国", "鲢鳙": "全国",
+    # 南方为主（热带/亚热带，北方水温低难以存活）
+    "罗非": "南方", "鲮鱼": "南方", "太阳鱼": "南方", "白鲳": "南方",
+    "军鱼": "南方", "鳡鱼": "南方", "红尾": "南方",
+    # 北方为主（冷水鱼）
+    "狗鱼": "北方", "虹鳟": "北方",
+}
 
-def recommend_species(month: int) -> list[str]:
-    """按月份推荐候选目标鱼（最多 3 个）。"""
+# 北方省份（其余按南方处理）
+NORTH_PROVINCES = {
+    "黑龙江", "吉林", "辽宁", "内蒙古", "新疆", "青海", "甘肃", "宁夏",
+    "山西", "河北", "北京", "天津", "山东", "河南", "陕西", "西藏",
+}
+
+
+def region_for_province(province: str | None) -> str:
+    """省份 → 区域（北方/南方/全国）。未知时返回全国（不过滤）。"""
+    if not province:
+        return "全国"
+    name = province
+    for suffix in ["维吾尔自治区", "壮族自治区", "回族自治区", "自治区", "特别行政区", "省", "市"]:
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    if name in NORTH_PROVINCES:
+        return "北方"
+    return "南方"
+
+
+def recommend_species(month: int, region: str = "全国") -> list[str]:
+    """按月份 + 地域推荐候选目标鱼（地域特色鱼优先，最多 3 个）。"""
+    regional = {
+        "北方": ["狗鱼", "虹鳟"],  # 北方冷水特色
+        "南方": ["罗非", "鳡鱼"],  # 南方热带/特有
+    }.get(region, [])
+
+    candidates: list[str] = ["翘嘴", "鳜鱼", "鲈鱼"]
     for months, species in SEASON_SPECIES.items():
         if month in months:
-            return species[:3]
-    return ["翘嘴", "鳜鱼", "鲈鱼"]
+            candidates = species
+            break
+
+    result: list[str] = []
+    for s in regional + candidates:
+        if s not in result:
+            result.append(s)
+        if len(result) >= 3:
+            break
+    return result
 
 
 # 目标鱼别名 → 规范名
