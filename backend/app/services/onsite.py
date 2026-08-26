@@ -1,8 +1,11 @@
 """临场排障（FR-05）：确定性规则，问一个信息增益问题 → 3 步调整。
 
 每步含观察时长与升级条件，最多 3 步，避免同时更换多个变量（PRD FR-05）。
+V1.2：支持现场上下文抽取（水色/风力），明确信号不再重复追问。
 """
 from __future__ import annotations
+
+import re
 
 from .knowledge import PRACTICAL_TIPS
 
@@ -61,6 +64,42 @@ def classify_signal(text: str) -> str:
     return "no_sign"
 
 
+# 所有信号词的扁平列表（用于判断用户是否已明确描述现场信号）
+_SIGNAL_KEYWORDS = [
+    "挂底", "挂草", "挂障碍", "挂石头", "跑鱼", "脱钩", "掉了", "挣脱",
+    "炸水", "追口", "追饵", "水面炸", "扑食", "跟口", "不咬", "咬不中",
+    "只跟", "蹭饵", "没口", "没鱼", "没动静", "没反应", "空军",
+]
+
+
+def has_explicit_signal(text: str) -> bool:
+    """用户是否已明确描述现场信号（已描述则不再追问信号类型）。"""
+    return any(k in text for k in _SIGNAL_KEYWORDS)
+
+
+def extract_onsite_context(text: str) -> dict:
+    """抽取现场上下文：水色 / 风力 / 无口时长。"""
+    ctx: dict = {}
+    if any(k in text for k in ["浑", "黄", "泥浆", "浑水", "浊"]):
+        ctx["water_clarity"] = "muddy"
+    elif any(k in text for k in ["清", "清澈", "透明", "清水"]):
+        ctx["water_clarity"] = "clear"
+    if any(k in text for k in ["大风", "风大", "狂风", "风很大", "风太大"]):
+        ctx["actual_wind"] = "strong"
+    elif any(k in text for k in ["无风", "没风", "风小", "微风"]):
+        ctx["actual_wind"] = "calm"
+    m = re.search(r"(\d{1,2}|[一二两三四五六七八九十]+)\s*(分钟|小时|钟头)", text)
+    if m:
+        digits = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+                   "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+        raw = m.group(1)
+        n = int(raw) if raw.isdigit() else digits.get(raw)
+        if n is not None:
+            unit = m.group(2)
+            ctx["minutes_without_bite"] = n * 60 if "小时" in unit or unit == "钟头" else n
+    return ctx
+
+
 def ask_diagnostic_question() -> str:
     return (
         "现在水边是什么信号？可选："
@@ -72,16 +111,26 @@ def build_steps(signal: str) -> list[dict]:
     return _STEPS.get(signal, _STEPS["no_sign"])
 
 
-def steps_reply(signal: str) -> str:
+def steps_reply(signal: str, context: dict | None = None) -> str:
     steps = build_steps(signal)
-    lines = ["按顺序执行，一次只改一个变量："]
+    context = context or {}
+    lines = ["先确认现场安全：如遇大风、雷电、涨水或湿滑临水岸线，立即撤离，不要冒险。"]
+    lines.append("再按顺序执行，一次只改一个变量：")
+
+    # 现场上下文定制：风大 + 浑水
+    if context.get("actual_wind") == "strong" and context.get("water_clarity") == "muddy":
+        lines.append(
+            "现场风大且水浑：先别硬顶风口，换到背风、站位稳的岸段；"
+            "浑水里用振动更明显、对比度更高的饵攻中下层。"
+        )
+
     for i, s in enumerate(steps, 1):
-        line = f"{i}. {s['action']}（观察 {s['duration']}）"
-        if s["upgrade"] != "—":
-            line += f"；{s['upgrade']}。"
+        if s["duration"] == "—":
+            lines.append(f"{i}. {s['action']}；仍无改善则转场或收工。")
         else:
-            line += "。"
-        lines.append(line)
+            line = f"{i}. {s['action']}（观察 {s['duration']}）"
+            line += f"；{s['upgrade']}。" if s["upgrade"] != "—" else "。"
+            lines.append(line)
 
     tips = []
     idx = _TIP_IDX.get(signal)

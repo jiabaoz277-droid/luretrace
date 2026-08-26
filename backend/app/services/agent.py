@@ -48,8 +48,21 @@ def _get_or_create_session(user_id: str, session_id: str | None) -> tuple[str, d
         "version": 0,
         "mode": None,  # None | "onsite" | "report"
         "pending": {},
+        "completed": False,
     }
     return sid, _sessions[key]
+
+
+_NEW_TASK_HINTS = [
+    "值得去", "能去吗", "可以去吗", "适不适合", "要不要去", "能钓吗", "行不行",
+    "给个方案", "什么时候去", "去哪", "哪里", "哪个地方", "什么地方",
+    "未来几天", "这周", "周末", "明天", "后天", "几点", "什么时候",
+]
+
+
+def _starts_new_task(text: str) -> bool:
+    """新输入是否开启一个新出钓任务（而非回答上一任务的追问）。"""
+    return any(k in text for k in _NEW_TASK_HINTS)
 
 
 def _merge(base: FishingContext, new: FishingContext) -> FishingContext:
@@ -67,6 +80,7 @@ def _merge(base: FishingContext, new: FishingContext) -> FishingContext:
 def _persist_plan(plan: PlanData, session: dict, user_id: str) -> PlanData:
     session["version"] += 1
     plan.version = session["version"]
+    session["completed"] = True
     with db.get_session() as s:
         old = (
             s.query(Plan)
@@ -185,9 +199,10 @@ def extract_merged_slots(message: str, now: datetime | None = None) -> FishingCo
 def _handle_onsite_answer(message: str, sid: str, session: dict) -> dict:
     signal = onsite.classify_signal(message)
     session["mode"] = None
+    ctx = onsite.extract_onsite_context(message)
     return {
         "type": "onsite",
-        "reply": onsite.steps_reply(signal),
+        "reply": onsite.steps_reply(signal, ctx),
         "steps": onsite.build_steps(signal),
         "session_id": sid,
     }
@@ -402,6 +417,17 @@ def prepare(
 
     # 进入排障流
     if primary == "ON_SITE_TROUBLESHOOT":
+        if onsite.has_explicit_signal(message):
+            # 已明确信号：直接给步骤，不再追问信号类型
+            signal = onsite.classify_signal(message)
+            session["mode"] = None
+            ctx = onsite.extract_onsite_context(message)
+            return {
+                "type": "onsite",
+                "reply": onsite.steps_reply(signal, ctx),
+                "steps": onsite.build_steps(signal),
+                "session_id": sid,
+            }
         session["mode"] = "onsite"
         return {
             "type": "clarify",
@@ -490,6 +516,13 @@ def prepare(
             "reply": "完整禁钓/法规库本阶段暂未接入，出钓前请以现场告示为准；雷暴、大风、暴雨等天气风险我可以帮你判断。\n\n" + llm.reply_for_safety_rules(),
             "session_id": sid,
         }
+
+    # 任务切换：上一任务已完成，新输入开启新任务 → 重置累积槽位，避免悄悄沿用旧鱼种/地点
+    if session.get("completed") and _starts_new_task(message):
+        session["context"] = FishingContext()
+        session["version"] = 0
+        session["completed"] = False
+        session["pending"] = {}
 
     # 决策流：抽取并合并槽位
     new_slots = extract_merged_slots(message, now)

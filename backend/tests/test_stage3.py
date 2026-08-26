@@ -94,3 +94,24 @@ def test_insights_api(client):
     r = client.get("/api/v1/insights")
     assert r.status_code == 200
     assert "total" in r.json()
+
+
+def test_new_task_does_not_carry_old_species():
+    """任务书 7.4：新任务不得悄悄沿用旧任务的鱼种/地点。"""
+    from app.services import agent as agent_mod
+
+    agent_mod._sessions.clear()
+    r1 = handle("明早杭州打翘嘴", None)
+    assert r1["type"] == "plan"
+    assert r1["plan"].target_species == "翘嘴"
+
+    # 新任务：今天值得去吗 → 应追问地点，不沿用旧杭州
+    r2 = handle("今天值得去吗", r1["session_id"])
+    assert r2["type"] == "clarify"
+    assert r2["missing"] == ["location"]
+
+    # 回答杭州 → 生成新方案，不得悄悄沿用旧翘嘴（默认值需明示）
+    r3 = handle("杭州", r1["session_id"])
+    assert r3["type"] == "plan"
+    if r3["plan"].target_species == "翘嘴":
+        assert any("未指定对象鱼" in r for r in r3["plan"].risks)

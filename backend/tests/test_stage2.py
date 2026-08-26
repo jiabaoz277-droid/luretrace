@@ -103,17 +103,12 @@ def _done(events):
 
 
 def test_onsite_flow(client):
-    r = client.post("/api/v1/chat", json={"message": "到水边没口"})
+    # 已明确信号：直接给步骤，不再追问（任务书 2.5）
+    r = client.post("/api/v1/chat", json={"message": "到水边完全没口，水浑，风很大"})
     p = _done(_parse_sse(r.text))
-    assert p["type"] == "clarify"
-    assert "信号" in p["reply"]
-    assert p["quick_options"]
-
-    sid = _parse_sse(r.text)[-1]["session_id"]
-    r2 = client.post("/api/v1/chat", json={"message": "完全没口", "session_id": sid})
-    p2 = _done(_parse_sse(r2.text))
-    assert p2["type"] == "onsite"
-    assert len(p2["steps"]) == 3
+    assert p["type"] == "onsite"
+    assert len(p["steps"]) == 3
+    assert "背风" in p["reply"]  # 浑水+大风定制
 
 
 def test_report_flow(client):
