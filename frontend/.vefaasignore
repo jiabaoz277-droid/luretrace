@@ -1,0 +1,13 @@
+# veFaaS 打包排除（outputPath 指向 .next/standalone，不要排除其内部 node_modules/.next）
+
+# 环境变量与本地密钥
+.env
+.env.*
+!.env.example
+
+# 部署配置目录
+.vefaas/
+
+# 系统文件
+.DS_Store
+*.log

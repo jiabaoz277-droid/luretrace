@@ -145,10 +145,12 @@ def test_report_flow(client):
 def test_report_edit_delete(client):
     client.post("/api/v1/chat", json={"message": "记一下今天的战报"})
     # 直接通过接口创建一条也可；这里验证删除接口
+    from app.core import auth
     from app.models.report import CatchReport
 
+    uid = auth._user_id_for_code("TESTCODE")
     with db.get_session() as s:
-        rep = CatchReport(session_id="abc", result_type="skunked")
+        rep = CatchReport(session_id="abc", result_type="skunked", user_id=uid)
         s.add(rep)
         s.commit()
         rid = rep.id

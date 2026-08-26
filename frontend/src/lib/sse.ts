@@ -1,5 +1,5 @@
 /** SSE 事件解析：chunk* → done | error（契约见前端开发技术手册第四节）。 */
-import type { InsightStats, Plan, Report, Step } from "@/types/api";
+import type { InsightStats, Plan, Report, Spot, Step } from "@/types/api";
 
 export type DonePayload = {
   type: "plan" | "clarify" | "onsite" | "report" | "insight" | "reply";
@@ -10,6 +10,7 @@ export type DonePayload = {
   report?: Report;
   quick_options?: string[];
   insight?: InsightStats;
+  spots?: Spot[];
 };
 
 export type SSEEvent =

@@ -70,15 +70,8 @@ def test_multi_turn_reaches_plan(client):
     sid = _last_done(ev)["session_id"]
     assert _last_done(ev)["payload"]["missing"] == ["location"]
 
-    # 第二轮：回答地点 → 问目标鱼
+    # 第二轮：回答地点 → 直接生成方案（目标鱼未指定，默认翘嘴）
     r = client.post("/api/v1/chat", json={"message": "杭州", "session_id": sid})
-    ev = _parse_sse(r.text)
-    done = _last_done(ev)
-    assert done["payload"]["type"] == "clarify"
-    assert done["payload"]["missing"] == ["target_species"]
-
-    # 第三轮：回答目标鱼 → 生成方案
-    r = client.post("/api/v1/chat", json={"message": "翘嘴", "session_id": sid})
     done = _last_done(_parse_sse(r.text))
     assert done["payload"]["type"] == "plan"
 

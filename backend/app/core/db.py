@@ -46,9 +46,16 @@ def _migrate_legacy() -> None:
             ),
             (
                 "plans",
+                "user_id",
+                "ALTER TABLE plans ADD COLUMN user_id VARCHAR(64) DEFAULT 'default'",
+            ),
+            (
+                "plans",
                 "history_note",
                 "ALTER TABLE plans ADD COLUMN history_note VARCHAR(256)",
             ),
+            ("favorite_spots", "lat", "ALTER TABLE favorite_spots ADD COLUMN lat FLOAT"),
+            ("favorite_spots", "lon", "ALTER TABLE favorite_spots ADD COLUMN lon FLOAT"),
         ]:
             try:
                 cols = {c["name"] for c in insp.get_columns(table)}
@@ -63,3 +70,35 @@ def get_session():
     if _SessionLocal is None:
         _SessionLocal = sessionmaker(bind=get_engine(), autoflush=False)
     return _SessionLocal()
+
+
+def _sqlite_path() -> Path | None:
+    """返回 SQLite 数据库文件路径；非 SQLite 返回 None。"""
+    url = settings.database_url
+    if not url.startswith("sqlite:///"):
+        return None
+    return Path(url[len("sqlite:///"):])
+
+
+def backup_database() -> bool:
+    """把 SQLite 数据库备份到对象存储（未配置 S3 时退化为本地 /tmp 副本）。"""
+    path = _sqlite_path()
+    if path is None or not path.exists():
+        return False
+    from . import backup as backup_mod
+    return backup_mod.backup_db(path)
+
+
+def restore_database() -> bool:
+    """启动时若本地库缺失、云端有备份，下载恢复。"""
+    path = _sqlite_path()
+    if path is None or path.exists():
+        return False
+    from . import backup as backup_mod
+    return backup_mod.restore_db(path)
+
+
+def start_backup_loop():
+    """启动后台备份线程（预留实例常驻时生效）。"""
+    from . import backup as backup_mod
+    return backup_mod.start_backup_loop()

@@ -16,6 +16,7 @@ IntentType = Literal[
     "CATCH_REVIEW",
     "KNOWLEDGE_QA",
     "SAFETY_OR_RULES",
+    "FORECAST",
     "UNKNOWN",
 ]
 
@@ -31,6 +32,8 @@ class FishingContext(BaseModel):
     """对话槽位（对齐 PRD 10.2）。"""
 
     location: Optional[str] = None
+    lat: Optional[float] = None  # 精确定位纬度（WGS-84）
+    lon: Optional[float] = None  # 精确定位经度（WGS-84）
     time_window: Optional[str] = None  # 原始文本，如"明早"
     time_label: Optional[str] = None  # 解析后的绝对表述，如"明天 05:00–09:00"
     start_iso: Optional[str] = None

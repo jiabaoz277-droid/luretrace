@@ -14,7 +14,20 @@ import httpx
 from ..core.config import settings
 from ..schemas.chat import FishingContext, PlanData
 from . import intent as intent_rules
-from .knowledge import get_species
+from . import tackle
+from .knowledge import (
+    BEGINNER_KIT,
+    COMMON_MISTAKES,
+    LINE_GUIDE,
+    LINE_PAIRING,
+    LURE_SELECTION_RULE,
+    PRACTICAL_TIPS,
+    REEL_GUIDE,
+    ROD_TARGET,
+    SAFETY_RULES,
+    SPECIES_ALIASES,
+    get_species,
+)
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
@@ -191,12 +204,14 @@ def extract_slots_llm(text: str, now) -> FishingContext | None:
         return None
 
 
-_REPLY_SYSTEM = """你是"路亚问问"，一个懂当地水情、天气、对象鱼和装备的路亚搭子。回答规则：
+_REPLY_SYSTEM = """你是"老付"，一位拥有多年野钓实战经验的资深路亚玩家，随和接地气、说话通俗易懂，偶尔分享真实野钓趣事，精通淡水路亚、鱼种、钓点、装备与法规。回答规则：
 1. 先结论后依据：先回答是否建议出钓、信心等级、最佳窗口。
 2. 事实、推断、建议分层：天气是事实，鱼口是概率，动作是建议。
 3. 只使用我提供的方案数据，绝不编造天气、钓点状态、法规或鱼情。
 4. 不承诺"必中鱼""爆护"等确定性结果。
 5. 简短可执行，正文不超过 120 字。
+6. 主动宣传合规垂钓：不电鱼、不毒鱼、不放生外来入侵鱼种、小鱼放流、带走垂钓垃圾。
+7. 纯文本输出，不要用 Markdown 符号（如 **、#、-、`）。
 """
 
 
@@ -249,10 +264,10 @@ def stream_reply(plan: PlanData):
 
 def reply_for_clarify(missing: str) -> str:
     if missing == "location":
-        return "你从哪里出发？可以直接说城市或水域，也可以授权当前位置。"
+        return "老付问你从哪出发？直接说城市或水域，或者授权当前位置也行。"
     if missing == "target_species":
-        return "想打什么目标鱼？比如：翘嘴、鳜鱼、鲈鱼（直接回复鱼名即可）。"
-    return "还缺一点信息，请补充后再给你方案。"
+        return "想打什么鱼？翘嘴、鳜鱼、鲈鱼都行，直接回鱼名。"
+    return "还差点信息，补一下老付就给你出方案。"
 
 
 def reply_for_plan(plan: PlanData) -> str:
@@ -296,7 +311,8 @@ def _template_reply(plan: PlanData) -> str:
         lines.append("注意：" + "；".join(plan.risks[:2]) + "。")
     if plan.safety:
         lines.append("安全：" + "；".join(plan.safety) + "。")
-    lines.append("下一步：可告诉我“改成下午/换目标鱼/改距离”，我会只重算受影响部分。")
+    lines.append("下一步：跟老付说“改成下午/换目标鱼/改距离”，我只重算受影响的部分。")
+    lines.append("合规提醒：出发前核实当地禁渔期、禁钓区，泥鳅活饵全禁，保护鱼种放流。")
     return "\n".join(lines)
 
 
@@ -311,6 +327,83 @@ def reply_for_knowledge(species: str) -> str:
     )
 
 
+def reply_for_mistakes() -> str:
+    """常见误区（确定性文案，来自知识库）。"""
+    lines = ["老付跟你说几个新手常踩的误区："]
+    for i, m in enumerate(COMMON_MISTAKES, 1):
+        lines.append(f"{i}. {m}")
+    return "\n".join(lines)
+
+
+def reply_for_tips() -> str:
+    """实操技巧（确定性文案，来自知识库）。"""
+    lines = ["老付再给你几个实操技巧："]
+    for i, t in enumerate(PRACTICAL_TIPS, 1):
+        lines.append(f"{i}. {t}")
+    return "\n".join(lines)
+
+
+def reply_for_safety_rules() -> str:
+    """安全与法规提醒（确定性文案，来自知识库）。"""
+    lines = ["老付的安全与法规提醒："]
+    for i, r in enumerate(SAFETY_RULES, 1):
+        lines.append(f"{i}. {r}")
+    return "\n".join(lines)
+
+
+def reply_for_beginner() -> str:
+    """新手入门速览：安全 + 技巧 + 误区。"""
+    lines = ["老付带你入门，第一次钓鱼先记住这三条线："]
+    lines.append("【安全】" + "；".join(SAFETY_RULES) + "。")
+    lines.append("【技巧】" + "；".join(PRACTICAL_TIPS) + "。")
+    lines.append("【避坑】" + "；".join(COMMON_MISTAKES) + "。")
+    return "\n".join(lines)
+
+
+def reply_for_tackle(message: str) -> str:
+    """装备/拟饵搭配建议（确定性规则 + 知识库）。"""
+    # 1) 目标鱼 → 该鱼拟饵方案
+    species = None
+    for alias, name in SPECIES_ALIASES.items():
+        if alias in message:
+            species = name
+            break
+    if species:
+        k = get_species(species)
+        if k:
+            lures = "、".join(f"{l['type']}({l['weight']})" for l in k["lures"][:3])
+            technique = k.get("technique") or k["lures"][0]["action"]
+            return (
+                f"打{species}，老付推荐：{lures}。手法上{technique}，"
+                f"标点优先{'、'.join(k['spots'][:2])}。口诀：{LURE_SELECTION_RULE}。"
+            )
+
+    # 2) 竿调性 → 饵重范围 + 轮线搭配
+    rod = tackle.parse_rod_action([message])
+    if rod:
+        lo, hi = tackle.ROD_WEIGHT_RANGE.get(rod, (0, 0))
+        target = ROD_TARGET.get(rod, "泛用")
+        lines = [
+            f"{rod} 竿适合抛 {lo:g}–{hi:g}g 的饵，{target}。",
+            REEL_GUIDE["纺车轮"],
+            LINE_PAIRING,
+        ]
+        return "\n".join(lines)
+
+    # 3) 通用 → 新手套装
+    return _beginner_kit_reply()
+
+
+def _beginner_kit_reply() -> str:
+    lines = [f"新手第一套，老付建议{BEGINNER_KIT['principle']}的通用组合："]
+    lines.append(f"竿：{BEGINNER_KIT['rod']}")
+    lines.append(f"轮：{BEGINNER_KIT['reel']}")
+    lines.append(f"线：{BEGINNER_KIT['line']}")
+    lines.append(f"饵：{BEGINNER_KIT['lure']}")
+    lines.append(f"选型口诀：{LURE_SELECTION_RULE}")
+    return "\n".join(lines)
+
+
 def reply_out_of_scope(intent: str) -> str:
     if intent == "ON_SITE_TROUBLESHOOT":
         return "临场排障将在后续阶段开放。本阶段可先帮你规划出钓方案，告诉我时间、地点和目标鱼即可。"
@@ -321,11 +414,11 @@ def reply_out_of_scope(intent: str) -> str:
 
 # ---------- 战报复盘（FR-07） ----------
 
-_REVIEW_SYSTEM = """你是"路亚问问"的复盘助手。基于用户战报和关联计划，生成简短复盘：
+_REVIEW_SYSTEM = """你是"老付"在帮钓友复盘。基于用户战报和关联计划，生成简短复盘：
 1. 哪些判断被验证、哪些可能失效；
 2. 下次优先尝试什么；
-3. 只使用提供的数据，不编造，不承诺“必中”；
-4. 不超过 80 字。"""
+3. 只使用提供的数据，不编造，不承诺"必中"；
+4. 语气像老朋友聊天，不超过 80 字。"""
 
 
 def generate_review_llm(report: dict) -> str:
@@ -359,6 +452,12 @@ def _template_review(report: dict) -> str:
         parts.append(f"目标鱼：{report['species']}。")
     if report.get("lure"):
         parts.append(f"用饵：{report['lure']}。")
+    if report.get("length_weight"):
+        parts.append(f"个体：{report['length_weight']}。")
+    if report.get("water_color"):
+        parts.append(f"水色：{report['water_color']}。")
+    if report.get("flow"):
+        parts.append(f"流速：{report['flow']}。")
     if label in ("空军", "skunked"):
         parts.append("可能因素：窗口、水层或标点与当天鱼情不匹配。下次优先对比低光窗口和风向再定标点，并保留记录以便校准。")
     else:
@@ -368,11 +467,11 @@ def _template_review(report: dict) -> str:
 
 # ---------- 个性化经验总结（第 3 阶段） ----------
 
-_INSIGHT_SYSTEM = """你是"路亚问问"的个性化总结助手。基于用户战报统计，生成简短总结：
+_INSIGHT_SYSTEM = """你是"老付"在帮钓友总结个人规律。基于用户战报统计，生成简短总结：
 1. 结果分布与常钓目标鱼；
 2. 只使用提供的数据，不编造；
 3. 给出一个下次优先尝试的建议；
-4. 不超过 100 字。"""
+4. 语气随和接地气，不超过 100 字。"""
 
 
 def generate_insight_llm(stats: dict) -> str:

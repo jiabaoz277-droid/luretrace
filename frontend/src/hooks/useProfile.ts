@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ProfileData } from "@/types/api";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 const EMPTY: ProfileData = {
   rods: [],
@@ -21,7 +21,7 @@ export function useProfile() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/v1/profile`)
+    apiFetch("/api/v1/profile")
       .then((r) => (r.ok ? r.json() : EMPTY))
       .then((p) => setProfile({ ...EMPTY, ...p }))
       .catch(() => {})
@@ -29,7 +29,7 @@ export function useProfile() {
   }, []);
 
   const save = useCallback(async (data: ProfileData) => {
-    await fetch(`${API_BASE}/api/v1/profile`, {
+    await apiFetch("/api/v1/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),

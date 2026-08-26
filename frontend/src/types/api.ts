@@ -31,6 +31,44 @@ export type Plan = {
 
 export type Step = { action: string; duration: string; upgrade: string };
 
+export type Spot = {
+  name: string;
+  spot_type: string;
+  reason: string;
+  lat: number;
+  lon: number;
+  distance_km: number;
+};
+
+export type HourWeather = {
+  time: string;
+  temp: number;
+  precip_prob: number;
+  wind_scale: number;
+  wind_dir: string;
+  pressure: number;
+  pressure_trend: string;
+  condition: string;
+};
+
+export type FishScore = {
+  hour: string;
+  score: number;
+  temp: number;
+  condition: string;
+};
+
+export type Dashboard = {
+  location: string | null;
+  current: HourWeather | null;
+  sunrise?: string | null;
+  sunset?: string | null;
+  hourly: HourWeather[];
+  fish_scores: FishScore[];
+  spots: Spot[];
+  mock: boolean;
+};
+
 export type Report = {
   id: number;
   result_type: string;
@@ -71,5 +109,6 @@ export type Msg = {
   report?: Report | null;
   quick_options?: string[];
   insight?: InsightStats | null;
+  spots?: Spot[];
   error?: string;
 };

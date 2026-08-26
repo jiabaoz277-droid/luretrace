@@ -1,20 +1,188 @@
 @import "tailwindcss";
 
-/* Daiwa 风格主题：黑白灰专业底 + 品牌蓝 + 红强调 */
 @theme {
-  --color-daiwa: #01559e;
-  --color-daiwa-dark: #00437a;
-  --color-accent: #e74c3c;
-  --color-ink: #101820;
-  --color-ink-soft: #6b7280;
-  --color-paper: #f4f4f2;
-  --color-surface: #ffffff;
-  --color-line: #e5e5e0;
+  --color-daiwa: #143e30;
+  --color-daiwa-dark: #0e2e24;
+  --color-lime: #cfff45;
+  --color-accent: #e85d38;
+  --color-ink: #10201b;
+  --color-ink-soft: #68736f;
+  --color-paper: #f5f3ec;
+  --color-surface: #fffef9;
+  --color-line: #dfe2d8;
 }
 
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html { background: var(--color-paper); }
 body {
+  margin: 0;
   background: var(--color-paper);
   color: var(--color-ink);
-  font-family: Roboto, -apple-system, BlinkMacSystemFont, "PingFang SC",
-    "Microsoft YaHei", sans-serif;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+button, input { font: inherit; }
+button { cursor: pointer; }
+
+.lure-app-shell {
+  min-height: 100dvh;
+  overflow: hidden;
+  background: radial-gradient(circle at 84% 4%, rgb(207 255 69 / 24%), transparent 26%), var(--color-paper);
+}
+.lure-topbar {
+  width: min(1180px, calc(100% - 40px));
+  height: 82px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 42px;
+  border-bottom: 1px solid rgb(16 32 27 / 12%);
+}
+.lure-brand { display: flex; align-items: center; gap: 11px; }
+.lure-brand-mark {
+  width: 37px; height: 37px; display: grid; place-items: center;
+  border-radius: 48% 52% 46% 54%; background: var(--color-daiwa); color: var(--color-lime);
+  font-family: Georgia, "Songti SC", serif; font-weight: 800;
+}
+.lure-brand div { display: grid; gap: 1px; }
+.lure-brand strong { font-size: 18px; letter-spacing: -.04em; }
+.lure-brand small { color: #7f8984; font-size: 7px; letter-spacing: .16em; }
+.lure-nav { display: flex; gap: 28px; margin-left: auto; color: #58635e; font-size: 12px; }
+.lure-nav button { border: 0; background: transparent; padding: 0; color: inherit; font: inherit; font-size: inherit; cursor: pointer; }
+.lure-nav button:hover { color: var(--color-daiwa); }
+.lure-profile-button {
+  display: flex; align-items: center; gap: 12px; border: 0; border-radius: 999px;
+  padding: 10px 13px 10px 16px; background: var(--color-ink); color: white; font-size: 12px; font-weight: 700;
+}
+.lure-profile-button svg { width: 24px; height: 24px; padding: 6px; border-radius: 50%; background: var(--color-lime); color: var(--color-daiwa); }
+
+.lure-hero {
+  width: min(1180px, calc(100% - 40px));
+  min-height: calc(100dvh - 192px);
+  margin: 0 auto;
+  padding: 56px 0 52px;
+  display: grid;
+  grid-template-columns: .9fr 1.1fr;
+  align-items: center;
+  gap: 78px;
+}
+.lure-eyebrow { display: flex; align-items: center; gap: 10px; color: #60706a; font-size: 11px; font-weight: 750; letter-spacing: .12em; }
+.lure-eyebrow span { width: 8px; height: 8px; border-radius: 50%; background: #62a765; box-shadow: 0 0 0 5px rgb(98 167 101 / 14%); }
+.lure-intro h1 { margin: 24px 0; font-size: clamp(54px, 6vw, 86px); line-height: .98; letter-spacing: -.075em; font-weight: 850; }
+.lure-intro h1 em { color: var(--color-daiwa); font-family: Georgia, "Songti SC", serif; font-weight: 500; }
+.lure-intro>p { max-width: 540px; margin: 0; color: var(--color-ink-soft); font-size: 16px; line-height: 1.8; }
+.lure-proof-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 34px; }
+.lure-proof-grid article { min-height: 112px; padding: 15px; display: grid; align-content: space-between; border: 1px solid var(--color-line); border-radius: 18px; background: rgb(255 254 249 / 68%); }
+.lure-proof-grid svg { width: 18px; height: 18px; color: var(--color-daiwa); }
+.lure-proof-grid strong { margin-top: 14px; font-size: 13px; }
+.lure-proof-grid span { color: var(--color-ink-soft); font-size: 9px; }
+.lure-sample-query { margin-top: 25px; padding-top: 17px; border-top: 1px solid var(--color-line); }
+.lure-sample-query span { color: #8d9691; font-size: 8px; letter-spacing: .18em; }
+.lure-sample-query p { margin: 7px 0 0; font: italic 15px Georgia, "Songti SC", serif; color: var(--color-daiwa); }
+
+.lure-chat-card {
+  position: relative; height: min(720px, calc(100dvh - 132px)); min-height: 590px;
+  display: flex; flex-direction: column; padding: 18px 18px 12px;
+  border-radius: 30px; background: var(--color-daiwa); color: white;
+  box-shadow: 0 30px 70px rgb(20 62 48 / 24%); transform: rotate(.35deg);
+}
+.lure-chat-card::before { content: ""; position: absolute; z-index: -1; inset: -9px 18px 9px -9px; border: 1px solid rgb(20 62 48 / 22%); border-radius: 33px; transform: rotate(-1deg); }
+.lure-chat-head { display: flex; align-items: center; gap: 11px; padding: 2px 3px 12px; border-bottom: 1px solid rgb(255 255 255 / 10%); }
+.lure-assistant-avatar { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 14px; background: var(--color-lime); color: var(--color-daiwa); font-family: Georgia, "Songti SC", serif; font-weight: 800; }
+.lure-chat-head>div:nth-child(2) { display: grid; gap: 2px; }
+.lure-chat-head strong { font-size: 13px; }
+.lure-chat-head span { color: rgb(255 255 255 / 50%); font-size: 9px; }
+.lure-chat-head i { display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: 50%; background: var(--color-lime); }
+.lure-chat-head button { margin-left: auto; border: 0; background: transparent; color: rgb(255 255 255 / 55%); }
+.lure-chat-card>main { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 18%) transparent; }
+.lure-privacy-note { margin: 8px 0 0; color: rgb(255 255 255 / 40%); text-align: center; font-size: 8px; }
+
+.lure-status-strip {
+  width: min(1180px, calc(100% - 40px)); margin: -12px auto 40px;
+  display: grid; grid-template-columns: 1.45fr repeat(4, 1fr); overflow: hidden;
+  border: 1px solid var(--color-line); border-radius: 21px; background: var(--color-surface); box-shadow: 0 10px 30px rgb(20 45 36 / 6%);
+}
+.lure-status-strip>div { min-height: 86px; padding: 17px; display: grid; align-content: center; gap: 6px; border-left: 1px solid var(--color-line); }
+.lure-status-strip>div:first-child { border-left: 0; }
+.lure-status-strip small { color: var(--color-ink-soft); font-size: 8px; }
+.lure-status-strip strong { font-size: 11px; }
+.lure-status-main { grid-template-columns: 52px 1fr; gap: 13px !important; align-items: center; }
+.lure-status-main>span { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 17px; background: var(--color-lime); color: var(--color-daiwa); font-weight: 900; }
+.lure-status-main>div { display: grid; gap: 6px; }
+
+@media (max-width: 900px) {
+  .lure-nav { display: none; }
+  .lure-profile-button { margin-left: auto; }
+  .lure-hero { grid-template-columns: 1fr; gap: 42px; padding-top: 46px; }
+  .lure-intro { text-align: center; }
+  .lure-eyebrow { justify-content: center; }
+  .lure-intro>p { margin-inline: auto; }
+  .lure-chat-card { width: min(640px, 100%); margin: 0 auto; transform: none; }
+  .lure-status-strip { grid-template-columns: 1fr 1fr; }
+  .lure-status-main { grid-column: 1 / -1; }
+  .lure-status-strip>div { border-top: 1px solid var(--color-line); }
+}
+
+@media (max-width: 560px) {
+  .lure-topbar { width: calc(100% - 28px); height: 68px; }
+  .lure-brand small { display: none; }
+  .lure-profile-button { padding: 8px 10px; font-size: 10px; }
+  .lure-hero { width: calc(100% - 20px); min-height: 0; padding: 28px 0 20px; gap: 30px; }
+  .lure-intro h1 { margin: 18px 0; font-size: 48px; }
+  .lure-intro>p { font-size: 14px; }
+  .lure-proof-grid { display: none; }
+  .lure-sample-query { margin-top: 19px; }
+  .lure-chat-card { height: calc(100dvh - 112px); min-height: 600px; padding: 12px 10px 8px; border-radius: 24px; }
+  .lure-status-strip { display: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lure-intro { animation: lure-rise .65s ease-out both; }
+  .lure-chat-card { animation: lure-rise .75s .08s ease-out both; }
+  @keyframes lure-rise { from { opacity: 0; translate: 0 18px; } }
+}
+
+/* ---------- 居中对话 + 底部实时看板 ---------- */
+.lure-chat-center {
+  width: min(720px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 40px 0 28px;
+}
+.lure-chat-center .lure-chat-card { transform: none; }
+
+.lure-live-panel { width: min(1180px, calc(100% - 40px)); margin: 0 auto 48px; }
+.lure-live-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.lure-live-head h2 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
+.lure-live-head form { display: flex; gap: 8px; }
+.lure-live-head input { min-height: 38px; min-width: 180px; border: 1px solid var(--color-line); border-radius: 999px; padding: 0 16px; background: var(--color-surface); font-size: 13px; color: var(--color-ink); outline: none; }
+.lure-live-head input:focus { border-color: var(--color-daiwa); }
+.lure-live-head button { border: 0; border-radius: 999px; padding: 0 18px; background: var(--color-daiwa); color: white; font-size: 13px; font-weight: 700; }
+.lure-live-grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+.lure-weather-card { padding: 20px; border: 1px solid var(--color-line); border-radius: 20px; background: var(--color-surface); }
+.lure-weather-main { display: flex; align-items: center; gap: 14px; }
+.lure-temp { font-size: 42px; font-weight: 850; letter-spacing: -.04em; }
+.lure-weather-main strong { display: block; font-size: 15px; }
+.lure-weather-main small { display: block; margin-top: 2px; color: var(--color-ink-soft); font-size: 11px; }
+.lure-weather-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 16px; color: var(--color-ink-soft); font-size: 11px; }
+.lure-spots-box { min-height: 280px; border: 1px solid var(--color-line); border-radius: 20px; overflow: hidden; background: var(--color-surface); }
+.lure-weather-empty { margin: 0; padding: 20px; color: var(--color-ink-soft); font-size: 13px; }
+
+.lure-fishchart { margin-top: 16px; padding: 16px 20px 12px; border: 1px solid var(--color-line); border-radius: 20px; background: var(--color-surface); }
+.lure-fishchart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.lure-fishchart-head strong { font-size: 13px; }
+.lure-fishchart-legend { display: flex; gap: 12px; color: var(--color-ink-soft); font-size: 10px; }
+.lure-fishchart-legend span { display: flex; align-items: center; gap: 4px; }
+.lure-fishchart-legend i { width: 8px; height: 8px; border-radius: 50%; }
+.lure-fishchart-bars { display: flex; gap: 3px; align-items: flex-end; height: 96px; }
+.lure-fishchart-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; height: 100%; justify-content: flex-end; cursor: pointer; }
+.lure-fishchart-col:hover .lure-fishchart-bar { opacity: .75; }
+.lure-fishchart-bar-wrap { width: 100%; height: 72px; display: flex; align-items: flex-end; }
+.lure-fishchart-bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 4px; }
+.lure-fishchart-col span { font-size: 8px; color: var(--color-ink-soft); }
+.lure-fishchart-col span.is-now { color: var(--color-daiwa); font-weight: 700; }
+
+@media (max-width: 900px) {
+  .lure-live-grid { grid-template-columns: 1fr; }
+  .lure-live-head { flex-direction: column; align-items: stretch; }
+  .lure-live-head input { min-width: 0; flex: 1; }
 }

@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from .knowledge import PRACTICAL_TIPS
+
 # 信号 → 分类关键词（优先级从高到低）
 _SIGNALS = [
     ("snag", ["挂底", "挂草", "挂障碍", "挂石头"]),
@@ -41,6 +43,16 @@ _STEPS: dict[str, list[dict]] = {
     ],
 }
 
+# 排障信号 → 对应实操技巧索引（引用 knowledge.PRACTICAL_TIPS，保持单一数据源）
+_TIP_IDX = {
+    "snag": 3,            # 挂底轻抖竿脱困，禁止硬拉断线丢饵
+    "no_sign": 1,         # 同一钓位最多换3种饵，15–20分钟无口换点位
+    "follow_not_bite": 2,  # 频繁空口：换小饵、放慢收线
+    "chasing": 0,         # 抛投后等饵下沉，下落多截口
+    "lost_fish": None,    # 无专属技巧，仅给通用提醒
+}
+_UNIVERSAL_TIP_IDX = 4  # 保持安静，噪音驱鱼
+
 
 def classify_signal(text: str) -> str:
     for signal, keywords in _SIGNALS:
@@ -70,4 +82,14 @@ def steps_reply(signal: str) -> str:
         else:
             line += "。"
         lines.append(line)
+
+    tips = []
+    idx = _TIP_IDX.get(signal)
+    if idx is not None and 0 <= idx < len(PRACTICAL_TIPS):
+        tips.append(PRACTICAL_TIPS[idx])
+    if 0 <= _UNIVERSAL_TIP_IDX < len(PRACTICAL_TIPS):
+        tips.append(PRACTICAL_TIPS[_UNIVERSAL_TIP_IDX])
+    if tips:
+        lines.append("")
+        lines.append("技巧提醒：" + "；".join(tips) + "。")
     return "\n".join(lines)

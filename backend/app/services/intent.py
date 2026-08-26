@@ -211,12 +211,14 @@ def detect_intent(text: str) -> IntentType:
         return "ON_SITE_TROUBLESHOOT"
     if any(k in text for k in ["禁钓", "能不能钓", "违规", "雷暴", "安全吗", "危险"]):
         return "SAFETY_OR_RULES"
-    if any(k in text for k in ["是什么", "为什么", "习性", "介绍", "什么是", "怎么区分", "怎么钓", "怎么路亚", "如何钓", "能路亚吗", "能不能路亚", "可以路亚吗", "适合路亚吗", "好路亚吗"]):
+    if any(k in text for k in ["是什么", "为什么", "习性", "介绍", "什么是", "怎么区分", "怎么钓", "怎么路亚", "如何钓", "能路亚吗", "能不能路亚", "可以路亚吗", "适合路亚吗", "好路亚吗", "误区", "避坑", "技巧", "入门", "注意什么", "识鱼", "认鱼"]):
         return "KNOWLEDGE_QA"
     if any(k in text for k in ["什么饵", "怎么配", "用什么", "装备", "竿", "怎么打", "拟饵", "搭配"]):
         return "TACKLE_ADVICE"
     if any(k in text for k in ["几点", "什么时候", "什么时段", "时段", "哪个时间"]):
         return "CHOOSE_TIME"
+    if any(k in text for k in ["未来几天", "哪几天", "这一周", "这周", "未来一周", "未来三天", "未来3天", "未来7天", "往后几天", "周末哪天", "哪天适合", "哪天好"]):
+        return "FORECAST"
     if any(k in text for k in ["去哪", "哪里", "哪个地方", "什么地方", "哪个点", "什么点"]):
         return "CHOOSE_PLACE"
     if any(k in text for k in ["值得去", "能去吗", "可以去吗", "适不适合", "要不要去", "能钓吗", "行不行"]):
@@ -262,13 +264,11 @@ def extract_slots(text: str, now: datetime) -> FishingContext:
 
 
 def missing_slots(ctx: FishingContext) -> list[str]:
-    """返回需要追问的槽位（按 PRD 9.1 优先级：地点 > 目标鱼）。
+    """返回需要追问的槽位。只有地点必问；目标鱼不必总问（未指定默认按翘嘴给方案）。
 
     出行半径/装备/水域类型为可选槽位：提供了就用于优化，未提供不阻断生成。
     """
     missing = []
     if not ctx.location:
         missing.append("location")
-    if not ctx.target_species:
-        missing.append("target_species")
     return missing

@@ -4,13 +4,23 @@ import pathlib
 
 _TEST_DB = pathlib.Path(__file__).resolve().parents[2] / "data" / "test_fishing.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
+os.environ["ENV"] = "dev"
+os.environ["INVITE_CODES"] = "TESTCODE"
+os.environ["TOKEN_SECRET"] = "test-secret"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.core import auth  # noqa: E402
 from app.core import db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services import agent  # noqa: E402
+
+TEST_USER_ID = auth._user_id_for_code("TESTCODE")
+
+
+def _auth_headers() -> dict:
+    return {"Authorization": f"Bearer {auth.create_token(TEST_USER_ID)}"}
 
 
 @pytest.fixture(autouse=True)
@@ -25,4 +35,5 @@ def _reset_state():
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    """已登录的测试客户端（邀请码 TESTCODE → 固定 user_id）。"""
+    return TestClient(app, headers=_auth_headers())

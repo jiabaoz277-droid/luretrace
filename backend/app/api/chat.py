@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
+from ..core.auth import current_user_id
 from ..core.errors import AppError
 from ..schemas.chat import ChatRequest
 from ..services import agent, llm
@@ -29,10 +30,14 @@ def _chunks(text: str):
 
 
 @router.post("")
-async def chat(req: ChatRequest) -> StreamingResponse:
+async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
+    user_id = current_user_id(request)
+
     async def gen():
         try:
-            result = agent.prepare(req.message, req.session_id)
+            result = agent.prepare(
+                req.message, req.session_id, context=req.context, user_id=user_id
+            )
             sid = result.get("session_id")
             reply_parts: list[str] = []
 
@@ -62,6 +67,8 @@ async def chat(req: ChatRequest) -> StreamingResponse:
                 payload["report"] = result["report"]
             if result.get("quick_options"):
                 payload["quick_options"] = result["quick_options"]
+            if result.get("spots"):
+                payload["spots"] = result["spots"]
             if result.get("insight"):
                 payload["insight"] = result["insight"]
             yield _sse({"type": "done", "session_id": sid, "payload": payload})

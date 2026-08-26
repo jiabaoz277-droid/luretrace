@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Fish, MapPin } from "lucide-react";
-import { API_BASE } from "@/lib/api";
+import { ArrowUp, MapPin } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 import type { Msg } from "@/types/api";
 import { MessageBubble } from "./MessageBubble";
 
@@ -18,10 +18,12 @@ export function ChatView({
   messages,
   loading,
   onSend,
+  onLocated,
 }: {
   messages: Msg[];
   loading: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, context?: { lat?: number; lon?: number }) => void;
+  onLocated?: (name: string) => void;
 }) {
   const [input, setInput] = useState("");
   const [locating, setLocating] = useState(false);
@@ -36,16 +38,23 @@ export function ChatView({
       alert("当前浏览器不支持定位，请手动输入城市或水域");
       return;
     }
+    if (!window.isSecureContext) {
+      alert(
+        "浏览器出于安全策略，只在 HTTPS 或 localhost 下允许定位。\n当前是局域网 HTTP 访问，定位被禁止，请手动输入城市或水域，或用 http://localhost:3002 打开。"
+      );
+      return;
+    }
     setLocating(true);
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
       });
       const { latitude, longitude } = pos.coords;
-      const res = await fetch(`${API_BASE}/api/v1/geo/reverse?lat=${latitude}&lon=${longitude}`);
+      const res = await apiFetch(`/api/v1/geo/reverse?lat=${latitude}&lon=${longitude}`);
       const data = await res.json();
       if (data.name) {
-        onSend(data.name);
+        onSend(data.name, { lat: latitude, lon: longitude });
+        onLocated?.(data.name);
       } else {
         alert("定位失败，请手动输入城市");
       }
@@ -58,14 +67,16 @@ export function ChatView({
 
   return (
     <>
-      <main className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      <main className="flex-1 space-y-3 overflow-y-auto px-2 py-4 sm:px-3">
         {messages.length === 0 && (
-          <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-soft">
-            <div className="mb-1 flex items-center gap-2">
-              <Fish className="h-5 w-5 text-daiwa" />
-              <p className="font-semibold text-ink">告诉我你的出钓计划</p>
+          <div className="rounded-2xl border border-white/10 bg-white/8 p-4 text-sm text-white/65">
+            <div className="mb-2 flex items-center gap-2">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-lime text-sm font-bold text-daiwa">
+                付
+              </div>
+              <p className="font-semibold text-white">今天想怎么钓？</p>
             </div>
-            <p>例：明早杭州周边两小时，想打翘嘴</p>
+            <p className="leading-6">时间、地点、对象鱼，知道多少说多少。例：明早杭州周边两小时，想打翘嘴。</p>
           </div>
         )}
 
@@ -75,12 +86,12 @@ export function ChatView({
         <div ref={bottomRef} />
       </main>
 
-      <footer className="border-t border-line bg-surface p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+      <footer className="border-t border-white/10 bg-daiwa px-1 pt-3">
+        <div className="mb-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
           <button
             onClick={locate}
             disabled={loading || locating}
-            className="flex shrink-0 items-center gap-1 rounded-full border border-daiwa bg-daiwa/5 px-3 py-1 text-xs font-medium text-daiwa disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-lime/45 bg-lime/10 px-3 py-1.5 text-[11px] font-semibold text-lime disabled:opacity-50"
           >
             <MapPin className="h-3.5 w-3.5" />
             {locating ? "定位中…" : "当前位置"}
@@ -90,7 +101,7 @@ export function ChatView({
               key={q}
               onClick={() => onSend(q)}
               disabled={loading}
-              className="shrink-0 rounded-full border border-daiwa/30 bg-daiwa/5 px-3 py-1 text-xs font-medium text-daiwa disabled:opacity-50"
+              className="shrink-0 rounded-full border border-white/15 bg-white/6 px-3 py-1.5 text-[11px] font-medium text-white/75 hover:border-lime/55 hover:text-lime disabled:opacity-50"
             >
               {q}
             </button>
@@ -104,20 +115,21 @@ export function ChatView({
               setInput("");
             }
           }}
-          className="flex items-center gap-2"
+          className="flex min-h-14 items-center gap-2 rounded-2xl bg-white p-1.5 pl-4 shadow-lg shadow-black/10"
         >
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="你准备什么时候、去哪里、打什么鱼？"
-            className="min-h-11 flex-1 rounded-full border border-line bg-paper px-4 py-2 text-sm text-ink outline-none focus:border-daiwa"
+            className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-soft/60"
           />
           <button
             type="submit"
             disabled={loading || !input.trim()}
-            className="min-h-11 rounded-full bg-daiwa px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-lime text-daiwa disabled:opacity-45"
+            aria-label="发送"
           >
-            发送
+            <ArrowUp className="h-5 w-5" />
           </button>
         </form>
       </footer>

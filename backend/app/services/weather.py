@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 import httpx
 
@@ -169,3 +169,86 @@ def _mock(location: str | None, target_date: datetime) -> dict:
         "sunset": "18:50",
         "hourly": hourly,
     }
+
+
+# ---------- 逐日预报（多日出钓规划用） ----------
+
+
+def get_daily_forecast(location: str | None, days: int = 7) -> list[dict]:
+    """未来 N 天逐日预报；真实数据失败降级 mock。返回逐日摘要列表。"""
+    real = _get_daily_real(location, days)
+    if real:
+        return real
+    return _daily_mock(location, days)
+
+
+def _get_daily_real(location: str | None, days: int) -> list[dict] | None:
+    if not geo.is_configured() or not location:
+        return None
+    try:
+        place = geo.lookup_location(location)
+        if not place or not place.get("lat") or not place.get("lon"):
+            return None
+        host = settings.qweather_api_host
+        headers = {"X-QW-Api-Key": settings.qweather_key}
+        lat, lon = place["lat"], place["lon"]
+        resp = httpx.get(
+            f"https://{host}/weather/v1/daily/{lat}/{lon}",
+            params={"days": days, "lang": "zh", "localTime": "true"},
+            headers=headers,
+            timeout=10.0,
+        )
+        data = resp.json()
+        days_raw = data.get("days") or data.get("daily") or []
+        if not days_raw:
+            return None
+        result = []
+        for dd in days_raw[:days]:
+            dt = dd.get("daytime") or {}
+            nt = dd.get("nighttime") or {}
+            astro = dd.get("astro") or {}
+            p_day = _num(dt.get("precipitation", {}).get("probability"))
+            p_night = _num(nt.get("precipitation", {}).get("probability"))
+            precip_prob = max(p_day, p_night)
+            wind = dt.get("wind") or {}
+            fx = dd.get("forecastStartTime") or ""
+            result.append(
+                {
+                    "date": fx[:10] if fx else "",
+                    "temp_max": _num(dd.get("temperatureMax", {}).get("value")),
+                    "temp_min": _num(dd.get("temperatureMin", {}).get("value")),
+                    "condition": (dt.get("condition") or {}).get("text", ""),
+                    "precip_prob": round(precip_prob * 100),
+                    "wind_scale": int(_num(wind.get("scale"))),
+                    "wind_dir": _wind_zh(wind.get("direction", {}).get("compass")),
+                    "sunrise": _hhmm(astro.get("sunrise")) or "06:00",
+                    "sunset": _hhmm(astro.get("sunset")) or "18:00",
+                }
+            )
+        return result
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _daily_mock(location: str | None, days: int) -> list[dict]:
+    today = datetime.now().date()
+    conditions = ["多云", "晴", "小雨", "阴", "晴", "雷阵雨", "多云"]
+    precip = [10, 5, 45, 20, 5, 80, 10]
+    result = []
+    for i in range(days):
+        d = today + timedelta(days=i)
+        seed = (d.day + i) % 7
+        result.append(
+            {
+                "date": d.isoformat(),
+                "temp_max": 30 + seed % 5,
+                "temp_min": 22 + seed % 4,
+                "condition": conditions[seed],
+                "precip_prob": precip[seed],
+                "wind_scale": 2 + seed % 3,
+                "wind_dir": "东风" if seed % 2 == 0 else "东南风",
+                "sunrise": "05:20",
+                "sunset": "18:50",
+            }
+        )
+    return result

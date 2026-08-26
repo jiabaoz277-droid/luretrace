@@ -5,3 +5,6 @@ SQLAlchemy==2.0.36
 pytest==8.3.4
 httpx==0.28.1
 python-dotenv==1.0.1
+python-multipart==0.0.32
+boto3==1.35.99
+sentry-sdk==2.19.2

@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { Msg } from "@/types/api";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { NETWORK_ERROR, toAppError } from "@/lib/errors";
 import { parseSSEEvent } from "@/lib/sse";
 
@@ -26,7 +26,7 @@ export function useChat() {
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, context?: { lat?: number; lon?: number }) => {
       const message = text.trim();
       if (!message || loading) return;
       setMessages((prev) => [
@@ -37,10 +37,10 @@ export function useChat() {
       setLoading(true);
 
       try {
-        const res = await fetch(`${API_BASE}/api/v1/chat`, {
+        const res = await apiFetch("/api/v1/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, session_id: sessionRef.current }),
+          body: JSON.stringify({ message, session_id: sessionRef.current, context }),
         });
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
@@ -76,6 +76,7 @@ export function useChat() {
                 report: p.report ?? null,
                 quick_options: p.quick_options ?? undefined,
                 insight: p.insight ?? null,
+                spots: p.spots ?? undefined,
               }));
             } else if (ev.type === "error") {
               updateLastAssistant((m) => ({

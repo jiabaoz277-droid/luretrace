@@ -20,6 +20,7 @@ class Plan(Base):
     __tablename__ = "plans"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), default="default", index=True)
     session_id: Mapped[str] = mapped_column(String(64), index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     location: Mapped[str | None] = mapped_column(String(128), nullable=True)

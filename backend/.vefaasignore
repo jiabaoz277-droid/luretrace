@@ -1,0 +1,22 @@
+# veFaaS 打包排除：避免上传密钥与本地虚拟环境
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 密钥与本地数据（绝不进包）
+.env
+.env.*
+data/
+*.db
+*.sqlite3
+
+# 测试与评测（线上不需要）
+tests/
+eval/
+
+# 部署配置目录
+.vefaas/

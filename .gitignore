@@ -26,3 +26,6 @@ npm-debug.log*
 # ===== 系统 =====
 .DS_Store
 *.log
+
+# ===== 部署 =====
+.vefaas/

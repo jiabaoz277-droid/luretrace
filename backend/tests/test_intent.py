@@ -54,8 +54,8 @@ def test_extract_tackle_and_constraint():
 def test_missing_slots_priority():
     from app.schemas.chat import FishingContext
 
-    assert missing_slots(FishingContext()) == ["location", "target_species"]
-    assert missing_slots(FishingContext(location="杭州")) == ["target_species"]
+    assert missing_slots(FishingContext()) == ["location"]
+    assert missing_slots(FishingContext(location="杭州")) == []
     assert missing_slots(FishingContext(location="杭州", target_species="翘嘴")) == []
 
 
