@@ -5,8 +5,12 @@ from app.services.weather import _daily_mock
 
 
 def test_intent_detects_forecast():
-    assert intent.detect_intent("未来几天哪天适合钓鱼") == "FORECAST"
-    assert intent.detect_intent("这周末哪天好") == "FORECAST"
+    r = intent.detect_intent("未来几天哪天适合钓鱼")
+    assert r.primary_intent == "PLAN_TRIP"
+    assert "FORECAST" in r.secondary_intents
+    r2 = intent.detect_intent("这周末哪天好")
+    assert r2.primary_intent == "PLAN_TRIP"
+    assert "FORECAST" in r2.secondary_intents
 
 
 def test_score_day_blocking_weather():

@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 
 from ..core import db
+from ..core.validation import validate_plan
 from ..models.plan import Plan
 from ..models.report import RESULT_LABELS, CatchReport
 from ..models.spot import FavoriteSpot
@@ -375,6 +376,7 @@ def prepare(
         session["context"].lon = float(context["lon"])
 
     intent = detect_intent(message)
+    primary = intent.primary_intent
     hazards = detect_hazards(message)
     mode = session.get("mode")
 
@@ -399,7 +401,7 @@ def prepare(
         return _handle_insight(sid, user_id)
 
     # 进入排障流
-    if intent == "ON_SITE_TROUBLESHOOT":
+    if primary == "ON_SITE_TROUBLESHOOT":
         session["mode"] = "onsite"
         return {
             "type": "clarify",
@@ -409,7 +411,7 @@ def prepare(
         }
 
     # 进入战报流
-    if intent == "CATCH_REVIEW":
+    if primary == "CATCH_REPORT":
         session["mode"] = "report"
         session["pending"] = {}
         return {
@@ -420,7 +422,7 @@ def prepare(
         }
 
     # 知识问答
-    if intent == "KNOWLEDGE_QA":
+    if primary == "KNOWLEDGE_QA":
         species = _extract_species(message)
         if species:
             return {"type": "reply", "reply": llm.reply_for_knowledge(species), "session_id": sid}
@@ -432,12 +434,12 @@ def prepare(
             return {"type": "reply", "reply": llm.reply_for_tips(), "session_id": sid}
         return {"type": "reply", "reply": "可以问我“翘嘴怎么钓”“鳜鱼在什么水层”等对象鱼知识。", "session_id": sid}
 
-    # 装备/拟饵搭配
-    if intent == "TACKLE_ADVICE":
+    # 装备/拟饵搭配（纯装备问答，无出钓计划语义）
+    if primary == "TACKLE_QA":
         return {"type": "reply", "reply": llm.reply_for_tackle(message), "session_id": sid}
 
-    # 多日出钓预报
-    if intent == "FORECAST":
+    # 多日出钓预报（作为出钓计划的次意图）
+    if primary == "PLAN_TRIP" and "FORECAST" in intent.secondary_intents:
         ctx = session["context"]
         loc = extract_slots(message, now).location or ctx.location
         if not loc and ctx.lat is not None and ctx.lon is not None:
@@ -452,8 +454,8 @@ def prepare(
             }
         return {"type": "reply", "reply": forecast.forecast_reply(loc), "session_id": sid}
 
-    # 近场钓点推荐（基于地图水域）
-    if intent == "CHOOSE_PLACE":
+    # 近场钓点推荐（作为出钓计划的次意图）
+    if primary == "PLAN_TRIP" and "CHOOSE_PLACE" in intent.secondary_intents:
         ctx = session["context"]
         loc = extract_slots(message, now).location or ctx.location
         # 有精确定位优先用坐标，否则用地点名反查
@@ -482,7 +484,7 @@ def prepare(
         }
 
     # 法规类：本阶段未接入完整法规库
-    if intent == "SAFETY_OR_RULES" and not hazards:
+    if primary == "SAFETY_STOP" and not hazards:
         return {
             "type": "reply",
             "reply": "完整禁钓/法规库本阶段暂未接入，出钓前请以现场告示为准；雷暴、大风、暴雨等天气风险我可以帮你判断。\n\n" + llm.reply_for_safety_rules(),
@@ -536,6 +538,10 @@ def prepare(
     # 生成方案
     weather = get_hourly(ctx.location, now)
     plan = build_plan(ctx, weather, hazards, now, profile)
+    issues = validate_plan(plan, ctx)
+    if any(i.severity == "error" for i in issues):
+        plan.confidence = "low"
+        plan.risks.append("方案一致性校验未通过，已给出保守建议")
     plan.session_id = sid
     plan.history_note = _similar_history(plan.target_species, user_id)
     plan = _persist_plan(plan, session, user_id)

@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
-from ..schemas.chat import FishingContext, IntentType
+from ..schemas.chat import FishingContext, IntentResult
 from .knowledge import SPECIES_ALIASES, normalize_species
 
 # ---------- 中文数字 ----------
@@ -137,8 +137,9 @@ def _parse_time(text: str, now: datetime) -> dict | None:
     start_hour = max(0, min(start_hour, 23))
     end_hour = max(0, min(end_hour, 23))
 
-    start_dt = datetime.combine(target_date, time(start_hour, 0))
-    end_dt = datetime.combine(target_date, time(end_hour, 0))
+    _TZ = timezone(timedelta(hours=8))
+    start_dt = datetime.combine(target_date, time(start_hour, 0), tzinfo=_TZ)
+    end_dt = datetime.combine(target_date, time(end_hour, 0), tzinfo=_TZ)
     date_str = f"{target_date.month}月{target_date.day}日"
     label = f"{date_str} {start_hour:02d}:00–{end_hour:02d}:00"
     return {
@@ -165,6 +166,24 @@ def _extract_radius(text: str) -> str | None:
             unit = m.group(2)
             return f"{n}小时" if "小时" in unit else f"{n}分钟"
     return None
+
+
+def _extract_travel_limits(text: str) -> tuple[int | None, float | None]:
+    """结构化出行限制：返回 (max_travel_minutes, max_distance_km)。"""
+    minutes: int | None = None
+    distance: float | None = None
+    m = re.search(r"(\d{1,3}|[一二两三四五六七八九十]+)\s*(个?小时|分钟|钟头|h|H)", text)
+    if m:
+        n = _cn_to_int(m.group(1))
+        if n is not None:
+            unit = m.group(2)
+            minutes = n * 60 if "小时" in unit or unit in ("h", "H") else n
+    m = re.search(r"(\d{1,3}|[一二两三四五六七八九十]+)\s*(公里|千米|km|KM)", text)
+    if m:
+        n = _cn_to_int(m.group(1))
+        if n is not None:
+            distance = float(n)
+    return minutes, distance
 
 
 # ---------- 水域类型 ----------
@@ -203,29 +222,127 @@ def _extract_tackle(text: str) -> str | None:
     return "、".join(hits) if hits else None
 
 
-def detect_intent(text: str) -> IntentType:
-    # 复盘信号优先于“空军/没口”等临场信号
+# ---------- 意图识别辅助 ----------
+
+_BLOCKING_HAZARDS = {"雷暴", "暴雨", "大风", "洪水"}
+
+_TIME_HINTS = [
+    "今天", "今日", "今早", "今晚", "明天", "明日", "明早", "明晚", "后天",
+    "早上", "早晨", "上午", "中午", "下午", "傍晚", "晚上", "夜里", "凌晨",
+    "清晨", "周末", "周", "几点", "什么时候", "时段",
+]
+
+_DECISION_HINTS = [
+    "值得去", "能去吗", "可以去吗", "适不适合", "要不要去", "能钓吗", "行不行",
+    "给个方案", "什么时候去", "去哪", "哪里", "哪个地方", "什么地方", "哪个点",
+    "什么点", "何时",
+    # 预报/时间/地点选择语义也属于出钓决策
+    "未来几天", "哪几天", "这一周", "这周", "未来一周", "未来三天", "未来3天",
+    "未来7天", "往后几天", "周末哪天", "哪天适合", "哪天好", "哪天",
+    "几点", "什么时候", "什么时段", "时段", "哪个时间",
+]
+
+_CONSTRAINT_HINTS = [
+    "不夜钓", "不涉水", "带孩子", "不开车", "不坐船", "不跑太远", "只带微物竿",
+    "一个人", "最多", "以内", "小时", "公里", "千米", "分钟",
+]
+
+_FORECAST_HINTS = [
+    "未来几天", "哪几天", "这一周", "这周", "未来一周", "未来三天", "未来3天",
+    "未来7天", "往后几天", "周末哪天", "哪天适合", "哪天好",
+]
+
+_GO_OR_NOT_HINTS = ["值得去", "能去吗", "可以去吗", "适不适合", "要不要去", "能钓吗", "行不行"]
+_CHOOSE_TIME_HINTS = ["几点", "什么时候", "什么时段", "时段", "哪个时间"]
+_CHOOSE_PLACE_HINTS = ["去哪", "哪里", "哪个地方", "什么地方", "哪个点", "什么点"]
+
+
+def _has_time(text: str) -> bool:
+    return any(k in text for k in _TIME_HINTS)
+
+
+def _has_species(text: str) -> bool:
+    return any(alias in text for alias in SPECIES_ALIASES)
+
+
+def _has_tackle(text: str) -> bool:
+    return any(t.lower() in text.lower() for t in _TACKLE_HINTS)
+
+
+def _has_constraint(text: str) -> bool:
+    return any(k in text for k in _CONSTRAINT_HINTS)
+
+
+def detect_intent(text: str) -> IntentResult:
+    """识别主意图（V1.2：主意图 + 次意图 + 证据）。"""
+    evidence: list[str] = []
+
+    # 1) 安全阻断（最高）
+    hazards = detect_hazards(text)
+    blocking = [h for h in hazards if h in _BLOCKING_HAZARDS]
+    if blocking:
+        evidence.append(f"命中高风险：{'、'.join(blocking)}")
+        return IntentResult(primary_intent="SAFETY_STOP", confidence="high", evidence=evidence)
+    if any(k in text for k in ["禁钓", "能不能钓", "违规", "安全吗", "危险"]):
+        evidence.append("安全/法规询问")
+        return IntentResult(primary_intent="SAFETY_STOP", confidence="mid", evidence=evidence)
+
+    # 2) 战报（强动作词优先：复盘/战报/记一下）
     if any(k in text for k in ["复盘", "战报", "记一下", "上鱼了", "今天钓了"]):
-        return "CATCH_REVIEW"
-    if any(k in text for k in ["没口", "没鱼", "不咬", "空军", "打不到", "挂底", "跑鱼"]):
-        return "ON_SITE_TROUBLESHOOT"
-    if any(k in text for k in ["禁钓", "能不能钓", "违规", "雷暴", "安全吗", "危险"]):
-        return "SAFETY_OR_RULES"
-    if any(k in text for k in ["是什么", "为什么", "习性", "介绍", "什么是", "怎么区分", "怎么钓", "怎么路亚", "如何钓", "能路亚吗", "能不能路亚", "可以路亚吗", "适合路亚吗", "好路亚吗", "误区", "避坑", "技巧", "入门", "注意什么", "识鱼", "认鱼"]):
-        return "KNOWLEDGE_QA"
-    if any(k in text for k in ["什么饵", "怎么配", "用什么", "装备", "竿", "怎么打", "拟饵", "搭配"]):
-        return "TACKLE_ADVICE"
-    if any(k in text for k in ["几点", "什么时候", "什么时段", "时段", "哪个时间"]):
-        return "CHOOSE_TIME"
-    if any(k in text for k in ["未来几天", "哪几天", "这一周", "这周", "未来一周", "未来三天", "未来3天", "未来7天", "往后几天", "周末哪天", "哪天适合", "哪天好"]):
-        return "FORECAST"
-    if any(k in text for k in ["去哪", "哪里", "哪个地方", "什么地方", "哪个点", "什么点"]):
-        return "CHOOSE_PLACE"
-    if any(k in text for k in ["值得去", "能去吗", "可以去吗", "适不适合", "要不要去", "能钓吗", "行不行"]):
-        return "GO_OR_NOT"
+        evidence.append("命中战报信号")
+        return IntentResult(primary_intent="CATCH_REPORT", confidence="high", evidence=evidence)
+
+    # 3) 临场排障
+    if any(k in text for k in ["没口", "没鱼", "不咬", "空军", "打不到", "挂底", "跑鱼",
+                                "炸水", "跟口", "追饵", "蹭饵", "脱钩"]):
+        evidence.append("命中现场信号")
+        return IntentResult(primary_intent="ON_SITE_TROUBLESHOOT", confidence="high", evidence=evidence)
+
+    # 4) 出钓计划（优先级高于装备/知识：装备词作为约束进入 PLAN_TRIP）
+    plan_hits = sum([bool(_has_time(text)), _extract_location(text) is not None, _has_species(text)])
+    has_decision = any(k in text for k in _DECISION_HINTS)
+    has_constraint = _has_constraint(text)
+
+    if plan_hits >= 2 or has_decision or (_has_species(text) and has_constraint):
+        secondary: list[str] = []
+        if _has_tackle(text):
+            secondary.append("TACKLE_QA")
+        if any(k in text for k in _FORECAST_HINTS):
+            secondary.append("FORECAST")
+        if any(k in text for k in _CHOOSE_PLACE_HINTS):
+            secondary.append("CHOOSE_PLACE")
+        if any(k in text for k in _CHOOSE_TIME_HINTS):
+            secondary.append("CHOOSE_TIME")
+        if any(k in text for k in _GO_OR_NOT_HINTS):
+            secondary.append("GO_OR_NOT")
+        evidence.append(f"出钓计划信号：槽位命中 {plan_hits} 项；决策语义 {has_decision}")
+        return IntentResult(primary_intent="PLAN_TRIP", secondary_intents=secondary,
+                            confidence="high", evidence=evidence)
+
+    # 5) 个性化洞察
+    if any(k in text for k in ["我的规律", "历史规律", "复盘总结", "我的战报", "历史总结"]):
+        evidence.append("个性化洞察")
+        return IntentResult(primary_intent="PERSONAL_INSIGHT", confidence="high", evidence=evidence)
+
+    # 6) 装备问答（只有装备词、无出钓计划语义）
+    if _has_tackle(text) or any(k in text for k in ["什么饵", "怎么配", "用什么", "装备", "竿", "拟饵", "搭配"]):
+        evidence.append("装备/拟饵问答")
+        return IntentResult(primary_intent="TACKLE_QA", confidence="high", evidence=evidence)
+
+    # 7) 知识问答
+    if any(k in text for k in ["是什么", "为什么", "习性", "介绍", "什么是", "怎么区分",
+                                "怎么钓", "怎么路亚", "如何钓", "能路亚吗", "能不能路亚",
+                                "可以路亚吗", "适合路亚吗", "好路亚吗", "误区", "避坑",
+                                "技巧", "入门", "注意什么", "识鱼", "认鱼"]):
+        evidence.append("知识问答")
+        return IntentResult(primary_intent="KNOWLEDGE_QA", confidence="high", evidence=evidence)
+
+    # 8) 兜底：含出钓动作词则归 PLAN_TRIP
     if any(k in text for k in ["去", "路亚", "钓鱼", "出钓", "打", "甩两竿", "钓", "搞"]):
-        return "PLAN_TRIP"
-    return "UNKNOWN"
+        evidence.append("出钓动作词兜底")
+        return IntentResult(primary_intent="PLAN_TRIP", confidence="mid", evidence=evidence)
+
+    return IntentResult(primary_intent="UNKNOWN", confidence="low", evidence=["未命中任何意图信号"])
 
 
 def detect_hazards(text: str) -> list[str]:
@@ -257,6 +374,9 @@ def extract_slots(text: str, now: datetime) -> FishingContext:
             ctx.target_species = species
             break
     ctx.travel_radius = _extract_radius(text)
+    minutes, distance = _extract_travel_limits(text)
+    ctx.max_travel_minutes = minutes
+    ctx.max_distance_km = distance
     ctx.water_type = _extract_water_type(text)
     ctx.constraints = _extract_constraints(text)
     ctx.tackle = _extract_tackle(text)

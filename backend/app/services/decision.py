@@ -83,6 +83,77 @@ def _winter_lure(lures: list[dict]) -> dict | None:
     return None
 
 
+def derive_confidence(
+    condition_score: int, data_completeness: float, conflicts: list[str] | None = None
+) -> str:
+    """信心：受数据完整度与冲突数量影响，与条件分数解耦。"""
+    conflicts = conflicts or []
+    if conflicts:
+        return "low"
+    if data_completeness < 0.5:
+        return "low"
+    if data_completeness < 0.75:
+        return "mid"
+    if condition_score >= 75:
+        return "high"
+    return "mid"
+
+
+def _parse_iso(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _user_window_hours(ctx: FishingContext) -> tuple[int | None, int | None]:
+    """从用户可用时段提取小时范围。"""
+    start = _parse_iso(ctx.start_iso)
+    end = _parse_iso(ctx.end_iso)
+    return (start.hour if start else None, end.hour if end else None)
+
+
+def _constrain_window(
+    window: tuple[int, int], ctx: FishingContext, sunset: str
+) -> tuple[int, int] | None:
+    """把候选小时窗口约束到用户可用时段与不夜钓范围；无交集返回 None。"""
+    ws, we = window
+    us, ue = _user_window_hours(ctx)
+    if us is not None:
+        ws = max(ws, us)
+    if ue is not None:
+        we = min(we, ue)
+    if "不夜钓" in ctx.constraints:
+        try:
+            sh = int(sunset.split(":")[0])
+        except Exception:  # noqa: BLE001
+            sh = 18
+        we = min(we, sh)
+    if ws >= we:
+        return None
+    return (ws, we)
+
+
+def _data_completeness(ctx: FishingContext, weather: dict) -> float:
+    """数据完整度 0-1：天气/日出日落/地点/目标鱼/时间/非 mock。"""
+    score = 0.0
+    if weather.get("hourly"):
+        score += 0.35
+    if weather.get("sunrise") and weather.get("sunset"):
+        score += 0.10
+    if ctx.location:
+        score += 0.15
+    if ctx.target_species:
+        score += 0.15
+    if ctx.start_iso or ctx.time_label:
+        score += 0.15
+    if not (weather.get("meta") or {}).get("mock"):
+        score += 0.10
+    return min(1.0, score)
+
+
 def hourly_fish_scores(hourly: list[dict]) -> list[dict]:
     """逐小时鱼口参考分（0-100），供首页看板展示。"""
     result = []
@@ -232,11 +303,27 @@ def build_plan(
     assert k is not None
 
     season = season_strategy(now.month)
-    mw = _morning_window(weather)
-    ew = _evening_window(weather)
     is_winter = bool(season and season["name"] == "冬")
-    if is_winter:
-        mw = _WINTER_WINDOW
+    candidates = [_WINTER_WINDOW] if is_winter else [_morning_window(weather), _evening_window(weather)]
+
+    # 硬约束：用户可用时间 + 不夜钓
+    constrained = [w for w in (_constrain_window(c, ctx, weather["sunset"]) for c in candidates) if w]
+    if not constrained and (ctx.start_iso or ctx.end_iso or "不夜钓" in ctx.constraints):
+        us, ue = _user_window_hours(ctx)
+        if us is not None and ue is not None and us < ue:
+            constrained = [(us, ue)]
+    if not constrained:
+        constrained = [candidates[0]]
+
+    mw = constrained[0]
+    ew = constrained[1] if len(constrained) > 1 else None
+
+    # 不夜钓冲突检测
+    night_conflict = "不夜钓" in ctx.constraints and _is_night_window(mw)
+    if night_conflict:
+        risks.append("你的可用时段与白天窗口不重合，不建议改为夜钓")
+        safety.append("不夜钓约束优先：所有窗口须在日落前结束")
+
     score, factors = _weather_score(weather, mw)
     if season:
         factors.append(f"{season['name']}季：{season['strategy']}")
@@ -248,15 +335,24 @@ def build_plan(
     else:
         conclusion = "no_go"
 
-    confidence = "high"
+    # 数据完整度 + 信心（分数与信心解耦）
+    data_completeness = _data_completeness(ctx, weather)
+    conflicts: list[str] = []
     if weather["meta"].get("mock"):
-        confidence = "mid"
+        conflicts.append("mock_weather")
         risks.append("天气为模拟数据，真实出钓前请以现场实测为准")
+    if night_conflict:
+        conflicts.append("night_fishing_conflict")
+
+    confidence = derive_confidence(score, data_completeness, conflicts)
+
     if not ctx.target_species:
         risks.append("未指定对象鱼，已按翘嘴给出默认方案，可补充目标鱼优化")
     if ctx.location is None:
-        confidence = "low"
         risks.append("位置未知，仅给标点类型建议")
+
+    condition_band = "good" if score >= 75 else ("fair" if score >= 50 else "poor")
+    condition_score_range = (max(0, score - 5), min(100, score + 5))
 
     # 装备偏好联动（FR-06）：用户拟饵优先；车程限制作为默认约束
     profile_lures = (profile.lures or []) if profile else []
@@ -312,7 +408,7 @@ def build_plan(
     )
 
     best = _fmt_window(*mw)
-    backup_w = _fmt_window(*ew) if not is_winter else None
+    backup_w = _fmt_window(*ew) if ew else None
     if is_winter:
         factors.append(f"正午窗口 {best}")
     else:
@@ -334,6 +430,9 @@ def build_plan(
         plan_detail=detail,
         risks=risks,
         safety=safety,
+        data_completeness=data_completeness,
+        condition_band=condition_band,
+        condition_score_range=condition_score_range,
         data_basis={
             "weather": weather["meta"],
             "sunrise": weather["sunrise"],

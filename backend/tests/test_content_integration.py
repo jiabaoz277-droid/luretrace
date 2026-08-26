@@ -4,9 +4,9 @@ from app.services.intent import detect_intent
 
 
 def test_intent_detects_content_keywords():
-    assert detect_intent("新手有什么误区") == "KNOWLEDGE_QA"
-    assert detect_intent("有哪些实操技巧") == "KNOWLEDGE_QA"
-    assert detect_intent("路亚入门注意什么") == "KNOWLEDGE_QA"
+    assert detect_intent("新手有什么误区").primary_intent == "KNOWLEDGE_QA"
+    assert detect_intent("有哪些实操技巧").primary_intent == "KNOWLEDGE_QA"
+    assert detect_intent("路亚入门注意什么").primary_intent == "KNOWLEDGE_QA"
 
 
 def test_onsite_steps_include_tips():

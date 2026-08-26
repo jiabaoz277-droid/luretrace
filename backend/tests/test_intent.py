@@ -12,15 +12,26 @@ NOW = datetime(2026, 8, 25, 10, 0)  # 固定"现在"，保证相对时间可断�
 
 
 def test_detect_intent():
-    assert detect_intent("明早想去路亚") == "PLAN_TRIP"
-    assert detect_intent("今天值得去吗") == "GO_OR_NOT"
-    assert detect_intent("今天几点打翘嘴最好") == "CHOOSE_TIME"
-    assert detect_intent("一小时车程内去哪") == "CHOOSE_PLACE"
-    assert detect_intent("我只有ML竿和7g亮片怎么打") == "TACKLE_ADVICE"
-    assert detect_intent("到了半小时没口怎么办") == "ON_SITE_TROUBLESHOOT"
-    assert detect_intent("空军了帮我复盘") == "CATCH_REVIEW"
-    assert detect_intent("翘嘴什么习性") == "KNOWLEDGE_QA"
-    assert detect_intent("雷暴天能去吗") == "SAFETY_OR_RULES"
+    assert detect_intent("明早想去路亚").primary_intent == "PLAN_TRIP"
+    r = detect_intent("今天值得去吗")
+    assert r.primary_intent == "PLAN_TRIP" and "GO_OR_NOT" in r.secondary_intents
+    r = detect_intent("今天几点打翘嘴最好")
+    assert r.primary_intent == "PLAN_TRIP" and "CHOOSE_TIME" in r.secondary_intents
+    r = detect_intent("一小时车程内去哪")
+    assert r.primary_intent == "PLAN_TRIP" and "CHOOSE_PLACE" in r.secondary_intents
+    assert detect_intent("我只有ML竿和7g亮片怎么打").primary_intent == "TACKLE_QA"
+    assert detect_intent("到了半小时没口怎么办").primary_intent == "ON_SITE_TROUBLESHOOT"
+    assert detect_intent("空军了帮我复盘").primary_intent == "CATCH_REPORT"
+    assert detect_intent("翘嘴什么习性").primary_intent == "KNOWLEDGE_QA"
+    assert detect_intent("雷暴天能去吗").primary_intent == "SAFETY_STOP"
+
+
+def test_plan_intent_wins_over_tackle_terms():
+    """含装备的完整出钓需求不得被误分类为装备问答（任务书 2.1 回归用例）。"""
+    text = "明早杭州周边两小时打翘嘴，不夜钓，只有ML竿和7g亮片"
+    result = detect_intent(text)
+    assert result.primary_intent == "PLAN_TRIP"
+    assert "TACKLE_QA" in result.secondary_intents
 
 
 def test_extract_slots_full():
