@@ -20,16 +20,16 @@ export function FishScoreChart({
   return (
     <div className="lure-fishchart">
       <div className="lure-fishchart-head">
-        <strong>逐小时鱼口参考（点击柱子问老付）</strong>
+        <strong>逐小时出钓条件（点击查看原因）</strong>
         <div className="lure-fishchart-legend">
           <span>
-            <i style={{ background: "#62a765" }} /> 好
+            <i style={{ background: "#62a765" }} /> 较适合
           </span>
           <span>
-            <i style={{ background: "#d9a441" }} /> 一般
+            <i style={{ background: "#d9a441" }} /> 可尝试
           </span>
           <span>
-            <i style={{ background: "#e85d38" }} /> 差
+            <i style={{ background: "#e85d38" }} /> 不理想
           </span>
         </div>
       </div>
@@ -42,7 +42,7 @@ export function FishScoreChart({
               key={s.hour}
               className="lure-fishchart-col"
               onClick={() => onAsk?.(parseInt(s.hour, 10))}
-              title={`${s.hour}:00 ${s.condition} ${s.temp}℃ · 鱼口 ${s.score}（点击问老付）`}
+              title={`${s.hour}:00 ${s.condition} ${s.temp}℃ · 条件 ${s.score}（点击问老付）`}
             >
               <div className="lure-fishchart-bar-wrap">
                 <div
@@ -58,6 +58,9 @@ export function FishScoreChart({
           );
         })}
       </div>
+      <p className="lure-fishchart-note">
+        该指数仅根据天气、时段和目标鱼习性估算，不包含实时水温、水位和现场鱼情，不代表必然有口。
+      </p>
     </div>
   );
 }

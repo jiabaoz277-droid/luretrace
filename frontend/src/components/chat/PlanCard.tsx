@@ -15,20 +15,40 @@ const CONCLUSION_CLS: Record<Plan["conclusion"], string> = {
 
 const CONFIDENCE_TEXT = { high: "高", mid: "中", low: "低" } as const;
 
+const CONDITION_BAND_TEXT: Record<"good" | "fair" | "poor", string> = {
+  good: "较适合",
+  fair: "可尝试",
+  poor: "不理想",
+};
+
+function dataText(c?: number): string {
+  if (c == null) return "数据未知";
+  if (c >= 0.75) return "数据较完整";
+  if (c >= 0.5) return "数据一般";
+  return "数据不足";
+}
+
 export function PlanCard({ plan }: { plan: Plan }) {
   const d = plan.plan_detail || {};
   return (
     <div className="mt-3 overflow-hidden rounded-xl border border-line bg-surface">
+      {/* 第一层：结论 + 信心/数据 */}
       <div className="flex items-center justify-between border-b border-line bg-paper px-3 py-2">
         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CONCLUSION_CLS[plan.conclusion]}`}>
-          {CONCLUSION_TEXT[plan.conclusion]} · 信心{CONFIDENCE_TEXT[plan.confidence]}
+          {CONCLUSION_TEXT[plan.conclusion]}
         </span>
-        <span className="text-xs text-ink-soft">辅助分 {plan.score}</span>
+        <span className="text-xs text-ink-soft">
+          信心{CONFIDENCE_TEXT[plan.confidence]} · {dataText(plan.data_completeness)}
+        </span>
       </div>
 
+      {/* 第二层：最佳窗口 + 方案动作 */}
       <dl className="space-y-1.5 p-3 text-xs text-ink">
         {plan.best_window && (
-          <Row label="最佳窗口" value={plan.best_window + (plan.backup_window ? `（备选 ${plan.backup_window}）` : "")} />
+          <Row
+            label="最佳窗口"
+            value={plan.best_window + (plan.backup_window ? `（备选 ${plan.backup_window}）` : "")}
+          />
         )}
         {plan.location && <Row label="地点" value={plan.location} />}
         {plan.target_species && <Row label="目标鱼" value={plan.target_species} />}
@@ -40,8 +60,18 @@ export function PlanCard({ plan }: { plan: Plan }) {
         {d.action && <Row label="手法" value={d.action} />}
       </dl>
 
+      {/* 条件档位（替代"辅助分"，不制造虚假精确度） */}
+      <p className="border-t border-line px-3 py-2 text-xs text-ink-soft">
+        条件：{CONDITION_BAND_TEXT[plan.condition_band || "fair"]}
+        {plan.condition_score_range
+          ? `（${plan.condition_score_range[0]}–${plan.condition_score_range[1]}）`
+          : ""}
+        。该指数仅基于天气与时段估算，不代表实际鱼口。
+      </p>
+
+      {/* 为什么 + 风险/安全 */}
       {plan.factors?.length > 0 && (
-        <p className="border-t border-line px-3 py-2 text-xs text-ink-soft">
+        <p className="px-3 py-1 text-xs text-ink-soft">
           依据：{plan.factors.slice(0, 3).join("；")}
         </p>
       )}

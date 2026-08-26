@@ -41,8 +41,8 @@ def validate_plan(plan: PlanData, ctx: FishingContext) -> list[ValidationIssue]:
 
     start_h = _window_start_hour(plan.best_window)
 
-    # 不夜钓冲突（夜间窗口）
-    if "不夜钓" in ctx.constraints and start_h is not None and (start_h >= 20 or start_h <= 5):
+    # 不夜钓冲突：窗口开始时间在傍晚/夜间（18 点后）
+    if "不夜钓" in ctx.constraints and start_h is not None and start_h >= 18:
         issues.append(
             ValidationIssue(
                 code="NIGHT_FISHING_CONFLICT",

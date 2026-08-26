@@ -8,8 +8,8 @@ import { MessageBubble } from "./MessageBubble";
 
 const QUICK_QUESTIONS = [
   "今天值得去吗",
-  "明早杭州周边两小时打翘嘴",
   "到水边没口",
+  "明早杭州周边两小时打翘嘴",
   "记一下今天的战报",
   "我的规律",
 ];
@@ -98,6 +98,7 @@ export function ChatView({
       <footer className="border-t border-white/10 bg-daiwa px-1 pt-3">
         <div className="mb-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
           <button
+            type="button"
             onClick={locate}
             disabled={loading || locating}
             className="flex shrink-0 items-center gap-1.5 rounded-full border border-lime/45 bg-lime/10 px-3 py-1.5 text-[11px] font-semibold text-lime disabled:opacity-50"
@@ -108,6 +109,7 @@ export function ChatView({
           {QUICK_QUESTIONS.map((q) => (
             <button
               key={q}
+              type="button"
               onClick={() => onSend(q)}
               disabled={loading}
               className="shrink-0 rounded-full border border-white/15 bg-white/6 px-3 py-1.5 text-[11px] font-medium text-white/75 hover:border-lime/55 hover:text-lime disabled:opacity-50"
@@ -126,10 +128,15 @@ export function ChatView({
           }}
           className="flex min-h-14 items-center gap-2 rounded-2xl bg-white p-1.5 pl-4 shadow-lg shadow-black/10"
         >
+          <label className="sr-only" htmlFor="chat-input">
+            输入出钓问题
+          </label>
           <input
+            id="chat-input"
+            aria-describedby="chat-hint"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="你准备什么时候、去哪里、打什么鱼？"
+            placeholder="例：明早杭州周边两小时，想打翘嘴"
             className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-soft/60"
           />
           <button

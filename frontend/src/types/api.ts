@@ -27,6 +27,9 @@ export type Plan = {
   safety: string[];
   data_basis: Record<string, unknown>;
   history_note?: string | null;
+  data_completeness?: number;
+  condition_band?: "good" | "fair" | "poor";
+  condition_score_range?: [number, number] | null;
 };
 
 export type Step = { action: string; duration: string; upgrade: string };

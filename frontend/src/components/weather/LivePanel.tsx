@@ -65,7 +65,7 @@ export function LivePanel({
   return (
     <section className="lure-live-panel">
       <div className="lure-live-head">
-        <h2>实时天气 · 附近钓点</h2>
+        <h2>实时天气与附近钓点</h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();

@@ -35,7 +35,7 @@ export default function Home() {
         <div className="lure-brand" aria-label="路亚问问">
           <span className="lure-brand-mark">付</span>
           <div>
-            <strong>路亚问问</strong>
+            <h1>路亚问问</h1>
             <small>LURE DECISION ASSISTANT</small>
           </div>
         </div>
@@ -56,6 +56,7 @@ export default function Home() {
       {/* 居中的对话卡片 */}
       <section className="lure-chat-center">
         <section className="lure-chat-card" aria-label="与老付对话">
+          <h2 className="sr-only">与老付对话</h2>
           <div className="lure-chat-head">
             <div className="lure-assistant-avatar">付</div>
             <div>
