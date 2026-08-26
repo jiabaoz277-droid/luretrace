@@ -79,7 +79,7 @@ export default function Home() {
       </section>
 
       {/* 底部实时天气与附近钓点 */}
-      <LivePanel location={userLocation} onSend={send} />
+      <LivePanel location={userLocation} onSend={send} onLocated={setUserLocation} />
 
       {showWeather && <WeatherDashboard onClose={() => setShowWeather(false)} />}
       {showProfile && <ProfilePanel onClose={() => setShowProfile(false)} />}

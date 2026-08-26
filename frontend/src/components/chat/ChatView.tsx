@@ -35,31 +35,40 @@ export function ChatView({
 
   async function locate() {
     if (!("geolocation" in navigator)) {
-      alert("当前浏览器不支持定位，请手动输入城市或水域");
+      alert("当前浏览器不支持定位，请在下方手动输入城市");
       return;
     }
     if (!window.isSecureContext) {
-      alert(
-        "浏览器出于安全策略，只在 HTTPS 或 localhost 下允许定位。\n当前是局域网 HTTP 访问，定位被禁止，请手动输入城市或水域，或用 http://localhost:3002 打开。"
-      );
+      alert("当前不是 HTTPS 安全连接，浏览器禁止定位。请手动输入城市或水域。");
       return;
     }
     setLocating(true);
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          timeout: 15000,
+          maximumAge: 300000, // 5 分钟内可用缓存位置，提升成功率
+          enableHighAccuracy: false, // 网络定位即可，更快更稳
+        });
       });
       const { latitude, longitude } = pos.coords;
       const res = await apiFetch(`/api/v1/geo/reverse?lat=${latitude}&lon=${longitude}`);
       const data = await res.json();
       if (data.name) {
-        onSend(data.name, { lat: latitude, lon: longitude });
+        // 对话框里明确显示定位结果，并同步给底部天气面板
+        onSend(`📍 我的位置：${data.name}`, { lat: latitude, lon: longitude });
         onLocated?.(data.name);
       } else {
-        alert("定位失败，请手动输入城市");
+        alert("已获取坐标，但没解析出城市，请手动输入城市");
       }
-    } catch {
-      alert("无法获取位置（可能未授权），请手动输入城市或水域");
+    } catch (err) {
+      let reason = "无法获取位置，请手动输入城市或水域";
+      if (err && typeof err === "object" && "code" in err) {
+        const code = (err as GeolocationPositionError).code;
+        if (code === 1) reason = "定位权限被拒绝：请在浏览器设置里允许定位，或直接输入城市";
+        else if (code === 3) reason = "定位超时：请重试，或直接输入城市";
+      }
+      alert(reason);
     } finally {
       setLocating(false);
     }

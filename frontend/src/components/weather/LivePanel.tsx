@@ -14,21 +14,25 @@ const SpotsMap = dynamic(
 export function LivePanel({
   location,
   onSend,
+  onLocated,
 }: {
   location?: string | null;
   onSend: (text: string) => void;
+  onLocated?: (name: string) => void;
 }) {
-  const [place, setPlace] = useState(location || "杭州");
+  const [place, setPlace] = useState(location || "");
   const [data, setData] = useState<Dashboard | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   async function load(p: string) {
     const q = p.trim();
     if (!q) return;
+    setPlace(q);
     setLoading(true);
     try {
       const res = await apiFetch(`/api/v1/dashboard?place=${encodeURIComponent(q)}`);
       setData((await res.json()) as Dashboard);
+      onLocated?.(q); // 同步给上层，保持对话框与底部位置一致
     } catch {
       // 保持上一次数据
     } finally {
@@ -37,7 +41,7 @@ export function LivePanel({
   }
 
   useEffect(() => {
-    load(place);
+    if (place) load(place);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -106,7 +110,11 @@ export function LivePanel({
             </>
           ) : (
             <p className="lure-weather-empty">
-              {loading ? "正在加载实时天气…" : "暂无天气数据"}
+              {!place
+                ? "请先定位或输入城市"
+                : loading
+                  ? "正在加载实时天气…"
+                  : "暂无天气数据"}
             </p>
           )}
         </div>
@@ -116,7 +124,11 @@ export function LivePanel({
             <SpotsMap spots={data.spots} />
           ) : (
             <p className="lure-weather-empty">
-              {loading ? "正在加载附近钓点…" : "附近水域数据暂时没查到"}
+              {!place
+                ? "定位或输入城市后，显示附近水域"
+                : loading
+                  ? "正在加载附近钓点…"
+                  : "附近水域数据暂时没查到"}
             </p>
           )}
         </div>
