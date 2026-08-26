@@ -13,10 +13,14 @@ const SpotsMap = dynamic(
 
 export function LivePanel({
   location,
+  species,
+  travelMinutes,
   onSend,
   onLocated,
 }: {
   location?: string | null;
+  species?: string;
+  travelMinutes?: number;
   onSend: (text: string) => void;
   onLocated?: (name: string) => void;
 }) {
@@ -30,7 +34,10 @@ export function LivePanel({
     setPlace(q);
     setLoading(true);
     try {
-      const res = await apiFetch(`/api/v1/dashboard?place=${encodeURIComponent(q)}`);
+      const params = new URLSearchParams({ place: q });
+      if (species) params.set("target_species", species);
+      if (travelMinutes) params.set("max_travel_minutes", String(travelMinutes));
+      const res = await apiFetch(`/api/v1/dashboard?${params.toString()}`);
       setData((await res.json()) as Dashboard);
       onLocated?.(q); // 同步给上层，保持对话框与底部位置一致
     } catch {
@@ -53,6 +60,12 @@ export function LivePanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location]);
+
+  // 目标鱼种或车程变化时，重新按新约束推荐钓点
+  useEffect(() => {
+    if (place) load(place);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [species, travelMinutes]);
 
   const c = data?.current;
 

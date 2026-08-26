@@ -109,7 +109,7 @@ def test_find_spots_with_mock_river(monkeypatch):
         "tags": {"waterway": "river", "name": "测试河"},
         "geometry": [{"lat": lat, "lon": lon} for lat, lon in geo],
     }
-    monkeypatch.setattr(waters, "_query_overpass", lambda *a, **k: [way])
+    monkeypatch.setattr(waters, "_query_overpass", lambda *a, **k: ([way], []))
     monkeypatch.setattr(waters, "_amap_pois", lambda *a, **k: [])
     monkeypatch.setattr(
         waters.geo,
@@ -130,7 +130,7 @@ def test_choose_place_flow_returns_spots(monkeypatch):
         "tags": {"waterway": "river", "name": "富春江"},
         "geometry": [{"lat": lat, "lon": lon} for lat, lon in geo],
     }
-    monkeypatch.setattr(waters, "_query_overpass", lambda *a, **k: [way])
+    monkeypatch.setattr(waters, "_query_overpass", lambda *a, **k: ([way], []))
     monkeypatch.setattr(waters, "_amap_pois", lambda *a, **k: [])
     monkeypatch.setattr(
         waters.geo,
@@ -151,12 +151,24 @@ def test_choose_place_asks_location_when_missing():
 def test_choose_place_uses_context_coords(monkeypatch):
     called: dict = {}
 
-    def fake_find_spots(place=None, lat=None, lon=None, radius_m=5000.0, limit=3):
+    def fake_find_spots(place=None, lat=None, lon=None, radius_m=5000.0, limit=3,
+                        target_species=None, max_travel_minutes=None, max_distance_km=None):
         called["lat"] = lat
         called["lon"] = lon
+        called["species"] = target_species
         return []
 
     monkeypatch.setattr(waters, "find_spots", fake_find_spots)
     agent.prepare("哪里好钓", None, context={"lat": 30.0, "lon": 120.0})
     assert called["lat"] == 30.0  # 精确定位应被使用
     assert called["lon"] == 120.0
+
+
+def test_species_prefers_spot_type():
+    """鱼种标点匹配：翘嘴偏好湾口/入水口，鲫鱼偏好近岸浅滩。"""
+    from app.services.waters import _species_prefers
+
+    assert _species_prefers(["湾口", "深浅交界", "入水口"], "回水湾")
+    assert _species_prefers(["湾口", "深浅交界", "入水口"], "入水口")
+    assert _species_prefers(["浅滩", "水草边", "缓流区"], "近岸")
+    assert not _species_prefers(["水面开阔区", "下风处"], "回水湾")

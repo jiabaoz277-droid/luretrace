@@ -16,6 +16,8 @@ def dashboard(
     place: str | None = Query(None),
     lat: float | None = Query(None),
     lon: float | None = Query(None),
+    target_species: str | None = Query(None),
+    max_travel_minutes: int | None = Query(None),
 ):
     """按地点或坐标返回：当前天气 + 逐小时 + 日出日落 + 附近钓点。"""
     name = place
@@ -51,9 +53,17 @@ def dashboard(
     # 附近钓点
     spots: list[dict] = []
     if lat is not None and lon is not None:
-        spots = waters.find_spots(lat=lat, lon=lon)
+        spots = waters.find_spots(
+            lat=lat, lon=lon,
+            target_species=target_species,
+            max_travel_minutes=max_travel_minutes,
+        )
     elif name:
-        spots = waters.find_spots(place=name)
+        spots = waters.find_spots(
+            place=name,
+            target_species=target_species,
+            max_travel_minutes=max_travel_minutes,
+        )
 
     return {
         "location": name,

@@ -12,6 +12,7 @@ import httpx
 
 from ..core.config import settings
 from . import geo
+from .knowledge import get_species
 
 DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 _TIMEOUT = 15.0
@@ -196,14 +197,19 @@ def find_confluences(
 # ---------- 数据查询 ----------
 
 
-def _query_overpass(lat: float, lon: float, radius_m: float) -> list[dict]:
+def _query_overpass(
+    lat: float, lon: float, radius_m: float
+) -> tuple[list[dict], list[list[tuple[float, float]]]]:
+    """一次查询同时获取水域 ways 与保护区多边形，返回 (ways, protected_polys)。"""
     url = settings.overpass_url or DEFAULT_OVERPASS_URL
     ql = (
-        "[out:json][timeout:15];"
+        "[out:json][timeout:20];"
         "("
         f'way["waterway"="river"](around:{radius_m},{lat},{lon});'
         f'way["waterway"="stream"](around:{radius_m},{lat},{lon});'
         f'way["natural"="water"](around:{radius_m},{lat},{lon});'
+        f'way["boundary"="protected_area"](around:{radius_m},{lat},{lon});'
+        f'way["leisure"="nature_reserve"](around:{radius_m},{lat},{lon});'
         ");"
         "out geom;"
     )
@@ -216,7 +222,20 @@ def _query_overpass(lat: float, lon: float, radius_m: float) -> list[dict]:
     )
     resp.raise_for_status()
     data = resp.json()
-    return [e for e in data.get("elements", []) if e.get("type") == "way"]
+    ways: list[dict] = []
+    protected: list[list[tuple[float, float]]] = []
+    for e in data.get("elements", []):
+        if e.get("type") != "way":
+            continue
+        tags = e.get("tags") or {}
+        if tags.get("boundary") == "protected_area" or tags.get("leisure") == "nature_reserve":
+            g = e.get("geometry") or []
+            glatlon = [(p["lat"], p["lon"]) for p in g]
+            if len(glatlon) >= 4:
+                protected.append(glatlon)
+        else:
+            ways.append(e)
+    return ways, protected
 
 
 def _amap_pois(
@@ -272,6 +291,49 @@ def _amap_pois(
         return []
 
 
+# ---------- 鱼种标点匹配 ----------
+
+# 鱼种 spots 关键词 → 候选 spot_type（用于按鱼种习性优先推荐）
+_SPOT_TYPE_MATCH: dict[str, list[str]] = {
+    "回水湾": ["湾口", "回水湾", "洄水", "背风岸"],
+    "入水口": ["入水口", "汇口", "支流汇口", "急缓流交界", "急流边", "流水缓区"],
+    "近岸": [
+        "近岸", "岸边", "浅滩", "水草", "草洞", "芦苇", "浮萍", "荷叶",
+        "枯木", "码头桩", "岩石", "乱石", "碎石", "桥墩", "障碍",
+        "深浅交界", "明暗交界", "下风处",
+    ],
+    "钓场": [],
+    "水域": [],
+}
+
+
+def _species_prefers(species_spots: list[str], spot_type: str) -> bool:
+    """判断候选标点类型是否命中目标鱼偏好。"""
+    keys = _SPOT_TYPE_MATCH.get(spot_type, [])
+    if not keys:
+        return False
+    return any(any(k in s for k in keys) for s in species_spots)
+
+
+# ---------- 禁钓区域（保护区）----------
+
+
+def _point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
+    """射线法判断点是否在多边形内（坐标均为 lat,lon）。"""
+    lat, lon = point
+    inside = False
+    j = len(polygon) - 1
+    for i in range(len(polygon)):
+        lat_i, lon_i = polygon[i]
+        lat_j, lon_j = polygon[j]
+        if ((lon_i > lon) != (lon_j > lon)) and (
+            lat < (lat_j - lat_i) * (lon - lon_i) / (lon_j - lon_i) + lat_i
+        ):
+            inside = not inside
+        j = i
+    return inside
+
+
 # ---------- 对外入口 ----------
 
 
@@ -281,11 +343,24 @@ def find_spots(
     lon: float | None = None,
     radius_m: float = 5000.0,
     limit: int = 3,
+    target_species: str | None = None,
+    max_travel_minutes: int | None = None,
+    max_distance_km: float | None = None,
 ) -> list[dict]:
     """查询附近水域并分析候选钓点。失败或无数据返回 []。
 
+    - target_species：按目标鱼习性优先推荐匹配标点。
+    - max_travel_minutes / max_distance_km：按用户可接受车程过滤。
+    - 保护区（可能禁钓）内的点位会被排除。
+
     返回元素：{name, spot_type, reason, lat, lon, distance_km}
     """
+    # 车程 → 搜索半径（道路距离约等于直线距离的 1.2 倍，留余量）
+    if max_distance_km:
+        radius_m = max_distance_km * 1000 * 1.2
+    elif max_travel_minutes:
+        radius_m = (max_travel_minutes / 60) * 30 * 1000 * 1.2  # 按市区 30km/h 估算
+
     if lat is None or lon is None:
         if not place:
             return []
@@ -295,10 +370,11 @@ def find_spots(
         lat, lon = float(loc["lat"]), float(loc["lon"])
 
     ways: list[dict] = []
+    protected: list[list[tuple[float, float]]] = []
     try:
-        ways = _query_overpass(lat, lon, radius_m)
+        ways, protected = _query_overpass(lat, lon, radius_m)
     except Exception:  # noqa: BLE001
-        ways = []
+        ways, protected = [], []
 
     spots: list[dict] = []
     river_ways: list[dict] = []
@@ -380,6 +456,14 @@ def find_spots(
             }
         )
 
+    # 鱼种习性匹配：匹配目标鱼偏好标点的候选优先推荐，并改写原因
+    species_spots = (get_species(target_species) or {}).get("spots") or []
+    if species_spots:
+        for s in spots:
+            if _species_prefers(species_spots, s["spot_type"]):
+                s["priority"] = max(0, s["priority"] - 1)
+                s["reason"] = f"适合打{target_species}：{s['reason']}"
+
     # 去重（按坐标近似）并按（优先级, 距离）排序
     seen: set[tuple[float, float]] = set()
     unique: list[dict] = []
@@ -389,6 +473,21 @@ def find_spots(
             continue
         seen.add(key)
         unique.append(s)
+
+    # 车程/距离过滤：不推荐超出用户可接受范围的点位
+    if max_distance_km:
+        unique = [s for s in unique if s["distance_km"] <= max_distance_km * 1.2]
+    elif max_travel_minutes:
+        max_km = (max_travel_minutes / 60) * 30 * 1.2
+        unique = [s for s in unique if s["distance_km"] <= max_km]
+
+    # 保护区过滤（P0：不推荐禁钓区域）
+    if protected:
+        unique = [
+            s for s in unique
+            if not any(_point_in_polygon((s["lat"], s["lon"]), p) for p in protected)
+        ]
+
     for s in unique:
         s.pop("priority", None)
     return unique[:limit]

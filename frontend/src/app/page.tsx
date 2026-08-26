@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { ChatView } from "@/components/chat/ChatView";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
@@ -17,6 +17,24 @@ export default function Home() {
   const [userLocation, setUserLocation] = useState<string | null>(null);
   const [authed, setAuthed] = useState(false);
   const [ready, setReady] = useState(false);
+
+  // 从最近方案卡提取目标鱼种与车程限制，供底部钓点推荐使用
+  const latestPlan = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].plan) return messages[i].plan;
+    }
+    return null;
+  }, [messages]);
+  const species = latestPlan?.target_species ?? undefined;
+  const travelMinutes = useMemo(() => {
+    const r = latestPlan?.travel_radius;
+    if (!r) return undefined;
+    const h = r.match(/(\d+)\s*小时/);
+    if (h) return parseInt(h[1], 10) * 60;
+    const m = r.match(/(\d+)\s*分钟/);
+    if (m) return parseInt(m[1], 10);
+    return undefined;
+  }, [latestPlan]);
 
   useEffect(() => {
     setAuthed(!!getToken());
@@ -80,7 +98,13 @@ export default function Home() {
       </section>
 
       {/* 底部实时天气与附近钓点 */}
-      <LivePanel location={userLocation} onSend={send} onLocated={setUserLocation} />
+      <LivePanel
+        location={userLocation}
+        species={species}
+        travelMinutes={travelMinutes}
+        onSend={send}
+        onLocated={setUserLocation}
+      />
 
       {showWeather && <WeatherDashboard onClose={() => setShowWeather(false)} />}
       {showProfile && <ProfilePanel onClose={() => setShowProfile(false)} />}

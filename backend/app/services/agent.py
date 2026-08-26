@@ -484,12 +484,22 @@ def prepare(
     if primary == "PLAN_TRIP" and "CHOOSE_PLACE" in intent.secondary_intents:
         ctx = session["context"]
         loc = extract_slots(message, now).location or ctx.location
-        # 有精确定位优先用坐标，否则用地点名反查
+        # 有精确定位优先用坐标，否则用地点名反查；按目标鱼习性与车程限制推荐
         if ctx.lat is not None and ctx.lon is not None:
-            spots = waters.find_spots(lat=ctx.lat, lon=ctx.lon)
+            spots = waters.find_spots(
+                lat=ctx.lat, lon=ctx.lon,
+                target_species=ctx.target_species,
+                max_travel_minutes=ctx.max_travel_minutes,
+                max_distance_km=ctx.max_distance_km,
+            )
             place_label = loc or "你定位的位置"
         elif loc:
-            spots = waters.find_spots(place=loc)
+            spots = waters.find_spots(
+                place=loc,
+                target_species=ctx.target_species,
+                max_travel_minutes=ctx.max_travel_minutes,
+                max_distance_km=ctx.max_distance_km,
+            )
             place_label = loc
         else:
             return {
