@@ -402,7 +402,7 @@ def prepare(
         return _handle_report_input(message, sid, session, user_id)
 
     # 装备/钓法合规问答（三本钩、泥鳅活饵、串钩等）
-    if any(k in message for k in ["能不能", "可以吗", "合法吗", "允许", "违规", "禁用", "能用吗"]):
+    if any(k in message for k in ["能不能", "可以吗", "合法吗", "允许", "违规", "禁用", "能用吗", "行不行"]):
         for eq, guidance in BANNED_EQUIPMENT.items():
             if eq in message:
                 return {"type": "reply", "reply": f"老付说下「{eq}」：{guidance}", "session_id": sid}
