@@ -33,3 +33,8 @@ npm-debug.log*
 # ===== 本地备份与独立原型 =====
 archive/
 luji/
+
+# ===== 仅供本地参考的手册（不上传 GitHub） =====
+AI产品Vibe Coding通用前端技术栈手册(1)_副本.md
+AI产品Vibe Coding通用技术栈手册(1).md
+AI Agent 产品上线部署手册(1).md
