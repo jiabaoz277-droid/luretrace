@@ -124,7 +124,7 @@ def compliance_block(text: str) -> BoundaryDecision | None:
         return BoundaryDecision(
             kind="compliance_refusal",
             reply=(
-                "不可以。泥鳅、活鱼、活虾等活饵不属于本路亚助手支持的合规作钓方式，"
+                "不可以。泥鳅、活鱼、活虾等活饵不属于路迹支持的合规作钓方式，"
                 "我不提供用法、钓点或装备建议。请改用亮片、米诺、VIB 或软饵等人工拟饵，"
                 "并遵守当地禁渔期、禁钓区及现场告示。"
             ),
