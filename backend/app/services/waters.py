@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+import logging
 
 import httpx
 
@@ -14,12 +15,18 @@ from ..core.config import settings
 from . import geo
 from .knowledge import get_species
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 _TIMEOUT = 15.0
 
 # 回水湾的原因文案
 _BEND_REASON = "河道在这里拐弯，水流放缓，掠食鱼爱在湾口伏击小鱼"
 _CONFLUENCE_REASON = "两条水道在这里交汇，溶氧高、小鱼多，是入水口型标点"
+_STREAM_BEND_REASON = "溪流拐弯处，水面窄、鱼口有限，仅作备选"
+
+# 用户优先需要可作钓的大水面，小溪流只做最后兜底。
+_WATERWAY_RANK = {"river": 0, "canal": 1, "stream": 5}
 
 
 # ---------- 几何工具（纯函数，便于单测） ----------
@@ -206,6 +213,7 @@ def _query_overpass(
         "[out:json][timeout:20];"
         "("
         f'way["waterway"="river"](around:{radius_m},{lat},{lon});'
+        f'way["waterway"="canal"](around:{radius_m},{lat},{lon});'
         f'way["waterway"="stream"](around:{radius_m},{lat},{lon});'
         f'way["natural"="water"](around:{radius_m},{lat},{lon});'
         f'way["boundary"="protected_area"](around:{radius_m},{lat},{lon});'
@@ -263,6 +271,7 @@ def _amap_pois(
             },
             timeout=10.0,
         )
+        resp.raise_for_status()
         data = resp.json()
         if data.get("status") != "1":
             return []
@@ -288,6 +297,7 @@ def _amap_pois(
                 continue
         return pois
     except Exception:  # noqa: BLE001
+        logger.exception("Amap POI request failed")
         return []
 
 
@@ -374,6 +384,7 @@ def find_spots(
     try:
         ways, protected = _query_overpass(lat, lon, radius_m)
     except Exception:  # noqa: BLE001
+        logger.exception("Overpass water query failed")
         ways, protected = [], []
 
     spots: list[dict] = []
@@ -386,7 +397,7 @@ def find_spots(
         glatlon = [(p["lat"], p["lon"]) for p in g] if g else []
         if len(glatlon) < 4:
             continue
-        if wtype in ("river", "stream"):
+        if wtype in _WATERWAY_RANK:
             river_ways.append(w)
             for blat, blon in find_bends(glatlon):
                 glat, glon = wgs84_to_gcj02(blat, blon)
@@ -394,11 +405,11 @@ def find_spots(
                     {
                         "name": name,
                         "spot_type": "回水湾",
-                        "reason": _BEND_REASON,
+                        "reason": _STREAM_BEND_REASON if wtype == "stream" else _BEND_REASON,
                         "lat": glat,
                         "lon": glon,
                         "distance_km": round(_haversine((lat, lon), (blat, blon)) / 1000, 1),
-                        "priority": 0,
+                        "priority": _WATERWAY_RANK[wtype],
                     }
                 )
         elif wtype == "water":
@@ -483,9 +494,14 @@ def find_spots(
 
     # 保护区过滤（P0：不推荐禁钓区域）
     if protected:
+        # 候选点已转 GCJ-02，保护区也必须同坐标系再判断。
+        protected_gcj = [
+            [wgs84_to_gcj02(plat, plon) for plat, plon in polygon]
+            for polygon in protected
+        ]
         unique = [
             s for s in unique
-            if not any(_point_in_polygon((s["lat"], s["lon"]), p) for p in protected)
+            if not any(_point_in_polygon((s["lat"], s["lon"]), p) for p in protected_gcj)
         ]
 
     for s in unique:

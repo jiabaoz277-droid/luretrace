@@ -2,7 +2,15 @@
 import type { InsightStats, Plan, Report, Spot, Step } from "@/types/api";
 
 export type DonePayload = {
-  type: "plan" | "clarify" | "onsite" | "report" | "insight" | "reply";
+  type:
+    | "plan"
+    | "clarify"
+    | "onsite"
+    | "report"
+    | "insight"
+    | "reply"
+    | "compliance_refusal"
+    | "out_of_scope";
   reply: string;
   plan?: Plan;
   missing?: string[];

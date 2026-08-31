@@ -16,6 +16,8 @@ from fastapi import Header, HTTPException, Request
 
 from .config import settings
 
+SESSION_COOKIE = "lure_session"
+
 
 def _user_id_for_code(code: str) -> str:
     """把邀请码映射为稳定、不暴露原始码的用户标识。"""
@@ -84,8 +86,9 @@ def _extract_bearer(authorization: str | None) -> str | None:
 
 
 def get_current_user(request: Request, authorization: str | None = Header(None)) -> str:
-    """FastAPI 依赖：校验 Bearer token，把 user_id 挂到 request.state.user_id。"""
-    user_id = resolve_token(_extract_bearer(authorization) or "")
+    """校验 HttpOnly 会话 Cookie；保留 Bearer 兼容已有 API 客户端。"""
+    token = _extract_bearer(authorization) or request.cookies.get(SESSION_COOKIE, "")
+    user_id = resolve_token(token)
     if not user_id:
         raise HTTPException(
             status_code=401, detail={"code": "unauthorized", "message": "请先登录"}

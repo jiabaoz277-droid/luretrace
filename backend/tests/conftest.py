@@ -11,7 +11,7 @@ os.environ["TOKEN_SECRET"] = "test-secret"
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.core import auth  # noqa: E402
+from app.core import auth, rate_limit  # noqa: E402
 from app.core import db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services import agent  # noqa: E402
@@ -28,6 +28,7 @@ def _reset_state():
     from app.models import Base
 
     agent._sessions.clear()
+    rate_limit.reset()
     Base.metadata.drop_all(bind=db.get_engine())
     db.init_db()
     yield

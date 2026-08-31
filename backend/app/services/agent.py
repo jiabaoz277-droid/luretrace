@@ -5,11 +5,18 @@
 from __future__ import annotations
 
 import re
+import threading
+import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime
+
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from ..core import db
 from ..core.validation import validate_plan
+from ..models.conversation import ConversationSession
 from ..models.plan import Plan
 from ..models.report import RESULT_LABELS, CatchReport
 from ..models.spot import FavoriteSpot
@@ -18,6 +25,7 @@ from . import forecast, insights, llm, onsite, waters
 from . import geo
 from .decision import build_plan
 from .intent import (
+    BEGINNER_HINTS,
     SPECIES_ALIASES,
     detect_hazards,
     detect_intent,
@@ -26,31 +34,140 @@ from .intent import (
 )
 from .knowledge import BANNED_EQUIPMENT, recommend_species, region_for_province
 from .profile import get_profile
+from .safety import (
+    compliance_block,
+    emotion_preamble,
+    is_negative,
+    is_out_of_scope,
+    out_of_scope_reply,
+)
 from .weather import get_hourly
 
 _BLOCKING_HAZARDS = {"雷暴", "暴雨", "大风", "洪水"}
 
-# 会话状态（进程内）：key = user_id:session_id，避免跨用户串状态
-_sessions: dict[str, dict] = {}
+# 数据库是会话真实来源；内存只作有界缓存。
+_SESSION_CACHE_TTL = 6 * 60 * 60
+_SESSION_CACHE_MAX = 1000
+_sessions: OrderedDict[str, dict] = OrderedDict()
+_cache_lock = threading.RLock()
+_session_locks: dict[str, threading.RLock] = {}
 
 
 def _session_key(user_id: str, sid: str) -> str:
     return f"{user_id}:{sid}"
 
 
+def _session_lock(key: str) -> threading.RLock:
+    with _cache_lock:
+        return _session_locks.setdefault(key, threading.RLock())
+
+
+def _prune_session_cache(now: float) -> None:
+    expired = [
+        key
+        for key, value in _sessions.items()
+        if now - float(value.get("_last_access", now)) > _SESSION_CACHE_TTL
+    ]
+    for key in expired:
+        _sessions.pop(key, None)
+        _session_locks.pop(key, None)
+    while len(_sessions) > _SESSION_CACHE_MAX:
+        key, _ = _sessions.popitem(last=False)
+        _session_locks.pop(key, None)
+
+
+def _row_to_session(row: ConversationSession) -> dict:
+    return {
+        "context": FishingContext(**(row.context or {})),
+        "version": row.version or 0,
+        "mode": row.mode,
+        "pending": row.pending or {},
+        "completed": bool(row.completed),
+        "_last_access": time.monotonic(),
+    }
+
+
 def _get_or_create_session(user_id: str, session_id: str | None) -> tuple[str, dict]:
     sid = session_id or uuid.uuid4().hex[:12]
     key = _session_key(user_id, sid)
-    if key in _sessions:
-        return sid, _sessions[key]
-    _sessions[key] = {
+    now = time.monotonic()
+    with _cache_lock:
+        _prune_session_cache(now)
+        if key in _sessions:
+            session = _sessions.pop(key)
+            session["_last_access"] = now
+            _sessions[key] = session
+            return sid, session
+
+    with db.get_session() as s:
+        row = (
+            s.query(ConversationSession)
+            .filter(
+                ConversationSession.user_id == user_id,
+                ConversationSession.session_id == sid,
+            )
+            .first()
+        )
+        if row:
+            session = _row_to_session(row)
+            with _cache_lock:
+                _sessions[key] = session
+            return sid, session
+
+    session = {
         "context": FishingContext(),
         "version": 0,
         "mode": None,  # None | "onsite" | "report"
         "pending": {},
         "completed": False,
+        "_last_access": now,
     }
-    return sid, _sessions[key]
+    with _cache_lock:
+        _sessions[key] = session
+    return sid, session
+
+
+def _persist_session_state(user_id: str, sid: str, session: dict) -> None:
+    values = {
+        "context": session["context"].model_dump(mode="json"),
+        "version": int(session.get("version") or 0),
+        "mode": session.get("mode"),
+        "pending": dict(session.get("pending") or {}),
+        "completed": bool(session.get("completed")),
+    }
+    with db.get_session() as s:
+        row = (
+            s.query(ConversationSession)
+            .filter(
+                ConversationSession.user_id == user_id,
+                ConversationSession.session_id == sid,
+            )
+            .first()
+        )
+        if row is None:
+            row = ConversationSession(user_id=user_id, session_id=sid, **values)
+            s.add(row)
+        else:
+            for field, value in values.items():
+                setattr(row, field, value)
+        try:
+            s.commit()
+        except IntegrityError:
+            # 另一实例可能同时创建了同一会话，改为更新。
+            s.rollback()
+            row = (
+                s.query(ConversationSession)
+                .filter(
+                    ConversationSession.user_id == user_id,
+                    ConversationSession.session_id == sid,
+                )
+                .first()
+            )
+            if row is None:
+                raise
+            for field, value in values.items():
+                setattr(row, field, value)
+            s.commit()
 
 
 _NEW_TASK_HINTS = [
@@ -77,22 +194,38 @@ def _merge(base: FishingContext, new: FishingContext) -> FishingContext:
     return FishingContext(**data)
 
 
+def _resolve_location_from_gps(ctx: FishingContext) -> FishingContext:
+    """已定位但没写地点时，用 GPS 逆地理编码补齐 location，避免再追问。"""
+    if not ctx.location and ctx.lat is not None and ctx.lon is not None:
+        try:
+            rev = geo.reverse_lookup(ctx.lat, ctx.lon)
+            if rev:
+                ctx.location = rev.get("name") or rev.get("district")
+        except Exception:  # noqa: BLE001
+            pass
+    return ctx
+
+
 def _persist_plan(plan: PlanData, session: dict, user_id: str) -> PlanData:
-    session["version"] += 1
-    plan.version = session["version"]
-    session["completed"] = True
     with db.get_session() as s:
-        old = (
+        db_version = (
+            s.query(func.max(Plan.version))
+            .filter(Plan.session_id == plan.session_id, Plan.user_id == user_id)
+            .scalar()
+            or 0
+        )
+        plan.version = max(int(session.get("version") or 0), int(db_version)) + 1
+        session["version"] = plan.version
+        session["completed"] = True
+        (
             s.query(Plan)
             .filter(
                 Plan.session_id == plan.session_id,
                 Plan.user_id == user_id,
                 Plan.status == "active",
             )
-            .all()
+            .update({Plan.status: "outdated"}, synchronize_session=False)
         )
-        for p in old:
-            p.status = "outdated"
         row = Plan(
             user_id=user_id,
             session_id=plan.session_id,
@@ -310,6 +443,7 @@ def _list_favorites(sid: str, user_id: str) -> dict:
             s.query(FavoriteSpot)
             .filter(FavoriteSpot.user_id == user_id)
             .order_by(FavoriteSpot.id.desc())
+            .limit(100)
             .all()
         )
     if not spots:
@@ -348,6 +482,13 @@ def _add_favorite(message: str, sid: str, session: dict, now: datetime, user_id:
         except (TypeError, ValueError):
             lat = lon = None
     with db.get_session() as s:
+        existing = (
+            s.query(FavoriteSpot)
+            .filter(FavoriteSpot.user_id == user_id, FavoriteSpot.name == loc)
+            .first()
+        )
+        if existing:
+            return {"type": "reply", "reply": f"「{loc}」已经在你的收藏里了。", "session_id": sid}
         spot = FavoriteSpot(user_id=user_id, name=loc, location=loc, lat=lat, lon=lon)
         s.add(spot)
         s.commit()
@@ -375,25 +516,53 @@ def _spots_reply(place: str, spots: list[dict]) -> str:
 
 # ---------- 主流程 ----------
 
-def prepare(
+def _prepare_with_session(
     message: str,
-    session_id: str | None,
+    sid: str,
+    session: dict,
     now: datetime | None = None,
     context: dict | None = None,
     user_id: str = "default",
 ) -> dict:
     now = now or datetime.now()
-    sid, session = _get_or_create_session(user_id, session_id)
 
     # 前端传来的精确定位（浏览器 GPS/WiFi 坐标，WGS-84）
     if context and context.get("lat") is not None and context.get("lon") is not None:
         session["context"].lat = float(context["lat"])
         session["context"].lon = float(context["lon"])
 
+    # P0 合规门禁必须早于会话模式、意图分流和模型调用。
+    # 否则用户在“临场排障/战报”模式中输入违规问题时会绕过拦截。
+    blocked = compliance_block(message)
+    if blocked:
+        return {
+            "type": blocked.kind,
+            "reply": blocked.reply,
+            "session_id": sid,
+        }
+
     intent = detect_intent(message)
     primary = intent.primary_intent
     hazards = detect_hazards(message)
     mode = session.get("mode")
+
+    has_active_fishing_context = any(
+        value not in (None, "", [])
+        for value in session["context"].model_dump(exclude_defaults=True).values()
+    )
+    message_slots = extract_slots(message, now)
+    has_message_fishing_slots = any(
+        value not in (None, "", [])
+        for value in message_slots.model_dump(exclude_defaults=True).values()
+    )
+    if is_out_of_scope(
+        message,
+        primary_intent=primary,
+        has_active_fishing_context=has_active_fishing_context,
+        has_message_fishing_slots=has_message_fishing_slots,
+        active_mode=mode,
+    ):
+        return {"type": "out_of_scope", "reply": out_of_scope_reply(), "session_id": sid}
 
     # 模式优先：排障 / 战报的后续输入
     if mode == "onsite":
@@ -401,11 +570,10 @@ def prepare(
     if mode == "report":
         return _handle_report_input(message, sid, session, user_id)
 
-    # 装备/钓法合规问答（三本钩、泥鳅活饵、串钩等）
-    if any(k in message for k in ["能不能", "可以吗", "合法吗", "允许", "违规", "禁用", "能用吗", "行不行"]):
-        for eq, guidance in BANNED_EQUIPMENT.items():
-            if eq in message:
-                return {"type": "reply", "reply": f"老付说下「{eq}」：{guidance}", "session_id": sid}
+    # 其他需要根据当地规定核实的装备问题（如三本钩/倒刺）仍走知识库答复。
+    for eq, guidance in BANNED_EQUIPMENT.items():
+        if eq in message:
+            return {"type": "reply", "reply": f"老付说下「{eq}」：{guidance}", "session_id": sid}
 
     # 收藏 / 历史规律（第 3 阶段）
     if "收藏" in message:
@@ -452,7 +620,7 @@ def prepare(
         species = _extract_species(message)
         if species:
             return {"type": "reply", "reply": llm.reply_for_knowledge(species), "session_id": sid}
-        if any(k in message for k in ["新手", "入门", "第一次"]):
+        if any(k in message for k in BEGINNER_HINTS) or "入门" in message:
             return {"type": "reply", "reply": llm.reply_for_beginner(), "session_id": sid}
         if any(k in message for k in ["误区", "避坑", "注意什么"]):
             return {"type": "reply", "reply": llm.reply_for_mistakes(), "session_id": sid}
@@ -528,8 +696,13 @@ def prepare(
         }
 
     # 任务切换：上一任务已完成，新输入开启新任务 → 重置累积槽位，避免悄悄沿用旧鱼种/地点
+    # 但精确定位（GPS）是当前事实，跨任务保留，避免用户定位过又被追问地点
     if session.get("completed") and _starts_new_task(message):
+        lat = session["context"].lat
+        lon = session["context"].lon
         session["context"] = FishingContext()
+        session["context"].lat = lat
+        session["context"].lon = lon
         session["version"] = 0
         session["completed"] = False
         session["pending"] = {}
@@ -537,6 +710,7 @@ def prepare(
     # 决策流：抽取并合并槽位
     new_slots = extract_merged_slots(message, now)
     ctx = _merge(session["context"], new_slots)
+    ctx = _resolve_location_from_gps(ctx)
     session["context"] = ctx
 
     profile = _load_profile(user_id)
@@ -591,6 +765,38 @@ def prepare(
     return {"type": "plan", "reply": None, "plan": plan, "session_id": sid}
 
 
+def prepare(
+    message: str,
+    session_id: str | None,
+    now: datetime | None = None,
+    context: dict | None = None,
+    user_id: str = "default",
+) -> dict:
+    """对同一用户会话串行编排，并在每轮结束后持久化状态。"""
+    sid = session_id or uuid.uuid4().hex[:12]
+    key = _session_key(user_id, sid)
+    with _session_lock(key):
+        _, session = _get_or_create_session(user_id, sid)
+        try:
+            result = _prepare_with_session(
+                message,
+                sid,
+                session,
+                now=now,
+                context=context,
+                user_id=user_id,
+            )
+            if is_negative(message):
+                if result.get("plan"):
+                    result["preamble"] = emotion_preamble()
+                elif result.get("reply"):
+                    result["reply"] = emotion_preamble() + result["reply"]
+            return result
+        finally:
+            session["_last_access"] = time.monotonic()
+            _persist_session_state(user_id, sid, session)
+
+
 def handle(
     message: str,
     session_id: str | None,
@@ -600,5 +806,5 @@ def handle(
     """非流式入口：prepare + 补全回复（测试/冒烟用）。"""
     result = prepare(message, session_id, now, user_id=user_id)
     if result.get("plan") and result.get("reply") is None:
-        result["reply"] = llm.reply_for_plan(result["plan"])
+        result["reply"] = (result.get("preamble") or "") + llm.reply_for_plan(result["plan"])
     return result

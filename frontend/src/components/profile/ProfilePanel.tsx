@@ -8,20 +8,12 @@ import type { ProfileData } from "@/types/api";
 export function ProfilePanel({ onClose }: { onClose: () => void }) {
   const { profile, loaded, save } = useProfile();
 
-  if (!loaded) {
-    return (
-      <div className="fixed inset-0 z-10 flex items-end justify-center bg-black/40" onClick={onClose}>
-        <div
-          className="w-full max-w-md rounded-t-2xl bg-surface p-5"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <p className="text-sm text-ink-soft">加载中…</p>
-        </div>
-      </div>
-    );
-  }
-
-  return <ProfileForm initial={profile} onSave={save} onClose={onClose} />;
+  return (
+    <div className="modal-backdrop">
+      <button className="modal-dismiss" type="button" aria-label="关闭装备面板" onClick={onClose}></button>
+      {loaded ? <ProfileForm initial={profile} onSave={save} onClose={onClose} /> : <section className="gear-modal" role="dialog" aria-modal="true"><p>正在加载装备档案…</p></section>}
+    </div>
+  );
 }
 
 function ProfileForm({
@@ -30,7 +22,7 @@ function ProfileForm({
   onClose,
 }: {
   initial: ProfileData;
-  onSave: (p: ProfileData) => Promise<void>;
+  onSave: (profile: ProfileData) => Promise<void>;
   onClose: () => void;
 }) {
   const [rods, setRods] = useState((initial.rods || []).join("、"));
@@ -43,7 +35,7 @@ function ProfileForm({
   const [noWading, setNoWading] = useState((initial.constraints || []).includes("不涉水"));
   const [saved, setSaved] = useState(false);
 
-  const split = (s: string) => s.split(/[,，、]/).map((x) => x.trim()).filter(Boolean);
+  const split = (value: string) => value.split(/[,，、]/).map((item) => item.trim()).filter(Boolean);
 
   async function handleSave() {
     const constraints: string[] = [];
@@ -60,107 +52,31 @@ function ProfileForm({
       constraints,
     });
     setSaved(true);
-    setTimeout(onClose, 700);
+    window.setTimeout(onClose, 700);
   }
 
   return (
-    <div className="fixed inset-0 z-10 flex items-end justify-center bg-black/40" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-t-2xl bg-surface p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center gap-2">
-          <span className="h-4 w-1 rounded bg-daiwa" />
-          <h2 className="text-base font-bold text-ink">我的装备与偏好</h2>
-        </div>
-
-        <label className="mb-3 block text-sm">
-          <span className="text-ink-soft">竿（型号/调性）</span>
-          <input
-            value={rods}
-            onChange={(e) => setRods(e.target.value)}
-            placeholder="如：ML调路亚竿、马口竿"
-            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
-          />
-        </label>
-
-        <label className="mb-3 block text-sm">
-          <span className="text-ink-soft">轮（型号/类型）</span>
-          <input
-            value={reels}
-            onChange={(e) => setReels(e.target.value)}
-            placeholder="如：纺车轮2500、水滴轮"
-            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
-          />
-        </label>
-
-        <label className="mb-3 block text-sm">
-          <span className="text-ink-soft">线（线号/材质）</span>
-          <input
-            value={lines}
-            onChange={(e) => setLines(e.target.value)}
-            placeholder="如：0.8号PE、1.5号尼龙"
-            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
-          />
-        </label>
-
-        <label className="mb-3 block text-sm">
-          <span className="text-ink-soft">常用拟饵（逗号分隔）</span>
-          <input
-            value={lures}
-            onChange={(e) => setLures(e.target.value)}
-            placeholder="如：7g亮片、米诺"
-            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
-          />
-        </label>
-
-        <label className="mb-3 block text-sm">
-          <span className="text-ink-soft">不愿使用的钓法</span>
-          <input
-            value={avoidMethods}
-            onChange={(e) => setAvoidMethods(e.target.value)}
-            placeholder="如：雷强、微物（可留空）"
-            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
-          />
-        </label>
-
-        <label className="mb-3 block text-sm">
-          <span className="text-ink-soft">最大车程</span>
-          <input
-            value={radius}
-            onChange={(e) => setRadius(e.target.value)}
-            placeholder="如：40分钟"
-            className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-daiwa"
-          />
-        </label>
-
-        <div className="mb-4 flex gap-6 text-sm text-ink">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={noNight} onChange={(e) => setNoNight(e.target.checked)} />
-            不夜钓
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={noWading} onChange={(e) => setNoWading(e.target.checked)} />
-            不涉水
-          </label>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={handleSave}
-            className="flex flex-1 items-center justify-center gap-1 rounded-full bg-daiwa py-2.5 text-sm font-semibold text-white"
-          >
-            {saved && <Check className="h-4 w-4" />}
-            {saved ? "已保存" : "保存"}
-          </button>
-          <button
-            onClick={onClose}
-            className="rounded-full border border-line px-5 py-2.5 text-sm text-ink-soft"
-          >
-            关闭
-          </button>
-        </div>
+    <section className="gear-modal" role="dialog" aria-modal="true" aria-labelledby="gear-title">
+      <button className="modal-close" type="button" onClick={onClose} aria-label="关闭">×</button>
+      <small>MY TACKLE</small>
+      <h2 id="gear-title">让建议适配你手里的装备</h2>
+      <p>路迹会优先使用已有装备，不会默认引导购买。</p>
+      <div className="profile-fields">
+        <label className="profile-field"><span>竿（型号/调性）</span><input value={rods} onChange={(event) => setRods(event.target.value)} placeholder="如：ML调路亚竿" /></label>
+        <label className="profile-field"><span>轮（型号/类型）</span><input value={reels} onChange={(event) => setReels(event.target.value)} placeholder="如：纺车轮2500" /></label>
+        <label className="profile-field"><span>线（线号/材质）</span><input value={lines} onChange={(event) => setLines(event.target.value)} placeholder="如：0.8号PE" /></label>
+        <label className="profile-field"><span>常用拟饵</span><input value={lures} onChange={(event) => setLures(event.target.value)} placeholder="如：7g亮片、米诺" /></label>
+        <label className="profile-field"><span>不愿使用的钓法</span><input value={avoidMethods} onChange={(event) => setAvoidMethods(event.target.value)} placeholder="可留空" /></label>
+        <label className="profile-field"><span>最大车程</span><input value={radius} onChange={(event) => setRadius(event.target.value)} placeholder="如：40分钟" /></label>
       </div>
-    </div>
+      <div className="profile-checks">
+        <label><input type="checkbox" checked={noNight} onChange={(event) => setNoNight(event.target.checked)} />不夜钓</label>
+        <label><input type="checkbox" checked={noWading} onChange={(event) => setNoWading(event.target.checked)} />不涉水</label>
+      </div>
+      <div className="profile-actions">
+        <button className="save-gear" type="button" onClick={handleSave}>{saved && <Check aria-hidden="true" size={15} />} {saved ? "已保存" : "保存装备"}</button>
+        <button className="secondary" type="button" onClick={onClose}>关闭</button>
+      </div>
+    </section>
   );
 }

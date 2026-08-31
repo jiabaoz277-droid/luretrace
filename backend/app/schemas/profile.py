@@ -7,13 +7,13 @@ from pydantic import BaseModel, Field
 
 
 class ProfileData(BaseModel):
-    rods: list[str] = Field(default_factory=list)
-    reels: list[str] = Field(default_factory=list)
-    lines: list[str] = Field(default_factory=list)
-    lures: list[str] = Field(default_factory=list)
-    avoid_methods: list[str] = Field(default_factory=list)
-    max_travel_radius: Optional[str] = None
+    rods: list[str] = Field(default_factory=list, max_length=50)
+    reels: list[str] = Field(default_factory=list, max_length=50)
+    lines: list[str] = Field(default_factory=list, max_length=50)
+    lures: list[str] = Field(default_factory=list, max_length=50)
+    avoid_methods: list[str] = Field(default_factory=list, max_length=50)
+    max_travel_radius: Optional[str] = Field(None, max_length=64)
     night_fishing: bool = False
     wading: bool = False
-    home_location: Optional[str] = None
-    constraints: list[str] = Field(default_factory=list)
+    home_location: Optional[str] = Field(None, max_length=128)
+    constraints: list[str] = Field(default_factory=list, max_length=50)

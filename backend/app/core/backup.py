@@ -6,6 +6,10 @@
 from __future__ import annotations
 
 import shutil
+import logging
+import os
+import sqlite3
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -14,6 +18,8 @@ from .config import settings
 
 _BACKUP_KEY = "lure-backup/app.db"
 _LOCAL_FALLBACK = Path("/tmp") / "db_backup" / "app.db"
+_BACKUP_LOCK = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 def _s3_configured() -> bool:
@@ -41,31 +47,47 @@ def _s3_client():
 
 
 def backup_db(path: Path) -> bool:
-    """把 path 上传到对象存储；成功返回 True。"""
+    """用 SQLite backup API 生成一致性快照，再上传到对象存储。"""
+    if not path.exists() or not _BACKUP_LOCK.acquire(blocking=False):
+        return False
     try:
-        if _s3_configured():
-            _s3_client().upload_file(str(path), settings.s3_bucket, _BACKUP_KEY)
-        else:
-            _LOCAL_FALLBACK.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, _LOCAL_FALLBACK)
+        with tempfile.TemporaryDirectory(prefix="lure-db-backup-") as temp_dir:
+            snapshot = Path(temp_dir) / "app.db"
+            with sqlite3.connect(path, timeout=30) as source:
+                with sqlite3.connect(snapshot) as target:
+                    source.backup(target)
+            if _s3_configured():
+                _s3_client().upload_file(str(snapshot), settings.s3_bucket, _BACKUP_KEY)
+            else:
+                _LOCAL_FALLBACK.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(snapshot, _LOCAL_FALLBACK)
         return True
     except Exception:  # noqa: BLE001
+        logger.exception("Database backup failed")
         return False
+    finally:
+        _BACKUP_LOCK.release()
 
 
 def restore_db(path: Path) -> bool:
-    """从对象存储下载备份到 path；成功返回 True。"""
+    """下载后先做完整性检查，再原子替换本地数据库。"""
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_suffix(path.suffix + ".restore.tmp")
         if _s3_configured():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            _s3_client().download_file(settings.s3_bucket, _BACKUP_KEY, str(path))
+            _s3_client().download_file(settings.s3_bucket, _BACKUP_KEY, str(temp_path))
         else:
             if not _LOCAL_FALLBACK.exists():
                 return False
-            path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(_LOCAL_FALLBACK, path)
+            shutil.copy2(_LOCAL_FALLBACK, temp_path)
+        with sqlite3.connect(temp_path) as restored:
+            result = restored.execute("PRAGMA integrity_check").fetchone()
+        if not result or result[0] != "ok":
+            raise RuntimeError("restored SQLite database failed integrity_check")
+        os.replace(temp_path, path)
         return True
     except Exception:  # noqa: BLE001
+        logger.exception("Database restore failed")
         return False
 
 
@@ -76,9 +98,10 @@ def start_backup_loop() -> threading.Thread:
         while True:
             try:
                 from . import db  # 延迟导入，避免循环依赖
-                db.backup_database()
+                if not db.backup_database():
+                    logger.warning("Scheduled database backup did not complete")
             except Exception:  # noqa: BLE001
-                pass
+                logger.exception("Scheduled database backup crashed")
             time.sleep(settings.backup_interval_seconds)
 
     t = threading.Thread(target=_loop, daemon=True, name="db-backup")

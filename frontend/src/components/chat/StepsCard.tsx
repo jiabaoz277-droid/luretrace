@@ -2,10 +2,10 @@ import type { Step } from "@/types/api";
 
 export function StepsCard({ steps }: { steps: Step[] }) {
   return (
-    <div className="mt-3 rounded-xl border border-line bg-surface p-3 text-xs text-ink">
-      <p className="mb-2 font-semibold text-daiwa">按顺序执行，一次只改一个变量</p>
+    <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-ink">
+      <p className="mb-2 font-semibold text-lime">按顺序执行，一次只改一个变量</p>
       {steps.map((s, i) => (
-        <div key={i} className="mb-2 border-l-2 border-daiwa/30 pl-3 last:mb-0">
+        <div key={i} className="mb-2 border-l-2 border-lime/30 pl-3 last:mb-0">
           <p className="font-medium">
             {i + 1}. {s.action}
           </p>

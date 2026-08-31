@@ -29,3 +29,7 @@ npm-debug.log*
 
 # ===== 部署 =====
 .vefaas/
+
+# ===== 本地备份与独立原型 =====
+archive/
+luji/

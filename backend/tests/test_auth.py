@@ -17,9 +17,22 @@ def test_login_ok():
     r = c.post("/api/v1/auth/login", json={"code": "TESTCODE"})
     assert r.status_code == 200
     body = r.json()
-    assert body["token"]
+    assert body["ok"] is True
+    assert "token" not in body
     assert body["user_id"] == auth._user_id_for_code("TESTCODE")
     assert body["expires_in"] > 0
+    cookie = r.headers["set-cookie"]
+    assert f"{auth.SESSION_COOKIE}=" in cookie
+    assert "HttpOnly" in cookie
+    assert "SameSite=strict" in cookie
+    assert c.get("/api/v1/auth/session").json()["authenticated"] is True
+
+
+def test_logout_clears_cookie():
+    c = TestClient(app)
+    assert c.post("/api/v1/auth/login", json={"code": "TESTCODE"}).status_code == 200
+    assert c.post("/api/v1/auth/logout").status_code == 204
+    assert c.get("/api/v1/auth/session").status_code == 401
 
 
 def test_login_wrong_code():

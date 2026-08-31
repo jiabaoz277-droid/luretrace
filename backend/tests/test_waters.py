@@ -165,10 +165,43 @@ def test_choose_place_uses_context_coords(monkeypatch):
 
 
 def test_species_prefers_spot_type():
-    """鱼种标点匹配：翘嘴偏好湾口/入水口，鲫鱼偏好近岸浅滩。"""
+    """鱼种标点匹配：翘嘴偏好湾口/入水口，黑鱼偏好近岸草区。"""
     from app.services.waters import _species_prefers
 
     assert _species_prefers(["湾口", "深浅交界", "入水口"], "回水湾")
     assert _species_prefers(["湾口", "深浅交界", "入水口"], "入水口")
-    assert _species_prefers(["浅滩", "水草边", "缓流区"], "近岸")
+    assert _species_prefers(["草洞", "芦苇", "浮萍塘"], "近岸")
     assert not _species_prefers(["水面开阔区", "下风处"], "回水湾")
+
+
+def test_river_prioritized_over_stream(monkeypatch):
+    """大河道优先于小溪流；小溪流只作为兜底且排在最后。"""
+    river_geo = _straight_then_bend_geometry()
+    # 溪流整体向东偏移约 0.05 度，避免与河坐标重合
+    stream_geo = [(lat, lon + 0.05) for lat, lon in river_geo]
+    ways = [
+        {
+            "type": "way",
+            "tags": {"waterway": "stream", "name": "小水沟"},
+            "geometry": [{"lat": lat, "lon": lon} for lat, lon in stream_geo],
+        },
+        {
+            "type": "way",
+            "tags": {"waterway": "river", "name": "富春江"},
+            "geometry": [{"lat": lat, "lon": lon} for lat, lon in river_geo],
+        },
+    ]
+    monkeypatch.setattr(waters, "_query_overpass", lambda *a, **k: (ways, []))
+    monkeypatch.setattr(waters, "_amap_pois", lambda *a, **k: [])
+    monkeypatch.setattr(
+        waters.geo,
+        "lookup_location",
+        lambda *a, **k: {"name": "杭州", "lat": 30.0, "lon": 120.0},
+    )
+    spots = waters.find_spots(place="杭州", limit=3)
+    assert spots, "应能分析出候选钓点"
+    assert spots[0]["name"] == "富春江"
+    assert spots[0]["spot_type"] == "回水湾"
+    names = [s["name"] for s in spots]
+    if "小水沟" in names:
+        assert names.index("富春江") < names.index("小水沟")

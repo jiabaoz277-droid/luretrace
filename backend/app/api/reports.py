@@ -19,13 +19,20 @@ def _get_owned(s, user_id: str, report_id: int) -> CatchReport:
 
 
 @router.get("")
-def list_reports(request: Request, session_id: str = Query(...)):
+def list_reports(
+    request: Request,
+    session_id: str = Query(...),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
     user_id = current_user_id(request)
     with db.get_session() as s:
         reps = (
             s.query(CatchReport)
             .filter(CatchReport.session_id == session_id, CatchReport.user_id == user_id)
             .order_by(CatchReport.id.desc())
+            .offset(offset)
+            .limit(limit)
             .all()
         )
         return [r.to_dict() for r in reps]

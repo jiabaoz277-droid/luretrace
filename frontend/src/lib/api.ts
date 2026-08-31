@@ -1,37 +1,24 @@
 /** API 基础地址：优先环境变量；默认同源（经 Next rewrites 代理到后端，避免 CORS）。 */
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
-const TOKEN_KEY = "lure_token";
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string): void {
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(TOKEN_KEY, token);
-  }
-}
-
 export function clearToken(): void {
   if (typeof window !== "undefined") {
-    window.localStorage.removeItem(TOKEN_KEY);
+    // 清理由旧版本遗留、可被脚本读取的 token。
+    window.localStorage.removeItem("lure_token");
   }
 }
 
 /**
- * 统一请求封装：自动附带 Bearer token；401 时清除 token 并广播未登录事件。
+ * 统一请求封装：使用同源 HttpOnly Cookie；401 时广播未登录事件。
  */
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers || {});
-  const token = getToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  clearToken();
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(`${API_BASE}${input}`, { ...init, headers });
+  const res = await fetch(`${API_BASE}${input}`, { ...init, headers, credentials: "same-origin" });
 
   if (res.status === 401 && !input.startsWith("/api/v1/auth")) {
     clearToken();

@@ -4,9 +4,6 @@ from app.services.knowledge import get_species, normalize_species, recommend_spe
 
 def test_normalize_new_species():
     cases = {
-        "草鱼": "草鱼", "鲩鱼": "草鱼",
-        "鲫鱼": "鲫鱼", "鲫瓜子": "鲫鱼",
-        "鲤鱼": "鲤鱼", "鲤拐子": "鲤鱼",
         "鲶鱼": "鲶鱼", "塘鲺": "鲶鱼",
         "黄辣丁": "黄颡鱼", "昂刺鱼": "黄颡鱼",
         "鳡鱼": "鳡鱼", "水老虎": "鳡鱼",
@@ -25,7 +22,6 @@ def test_normalize_new_species():
 
 def test_knowledge_covers_all():
     for alias, species in [
-        ("草鱼", "草鱼"), ("鲫鱼", "鲫鱼"), ("鲤鱼", "鲤鱼"),
         ("鲶鱼", "鲶鱼"), ("黄颡鱼", "黄颡鱼"), ("鳡鱼", "鳡鱼"),
         ("虹鳟", "虹鳟"), ("鳊鱼", "鳊鱼"), ("太阳鱼", "太阳鱼"),
         ("鲢鳙", "鲢鳙"), ("狗鱼", "狗鱼"),

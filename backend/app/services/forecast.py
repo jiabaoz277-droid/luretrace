@@ -80,7 +80,14 @@ def build_forecast(location: str | None, days: int = 7) -> dict:
             }
         )
     results.sort(key=lambda x: (-x["score"], x["date"]))
-    return {"results": results, "season_tip": season_tip, "source": location}
+    warning = next((d.get("warning") for d in daily if d.get("warning")), None)
+    return {
+        "results": results,
+        "season_tip": season_tip,
+        "source": location,
+        "data_status": "degraded" if any(d.get("mock") for d in daily) else "live",
+        "warning": warning,
+    }
 
 
 def forecast_reply(location: str | None, days: int = 7) -> str:
@@ -99,6 +106,8 @@ def forecast_reply(location: str | None, days: int = 7) -> str:
         )
     if data["season_tip"]:
         lines.append(data["season_tip"])
+    if data.get("warning"):
+        lines.append(f"数据提示：{data['warning']}。")
     lines.append("评分只是出钓参考，不保证上鱼；雷暴、大风天别去。")
     lines.append("出发前查一下当地禁渔期和禁钓区，合规垂钓。")
     return "\n".join(lines)

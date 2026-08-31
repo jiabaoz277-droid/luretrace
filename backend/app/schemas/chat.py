@@ -48,9 +48,9 @@ class IntentResult(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
-    session_id: Optional[str] = None
+    session_id: Optional[str] = Field(None, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
     # 前端可回传已解析的上下文（用于纠正/补充）
-    context: Optional[dict[str, Any]] = None
+    context: Optional[dict[str, Any]] = Field(None)
 
 
 class FishingContext(BaseModel):

@@ -1,4 +1,4 @@
-# 路亚问问（对话式路亚决策助手 MVP）
+# 路迹（对话式路亚决策助手 MVP）
 
 用对话帮助路亚用户完成一次出钓决策，并覆盖「计划 → 临场排障 → 战报复盘」完整闭环。
 
@@ -54,6 +54,7 @@ npm run dev -- -p 3002
 | `ENV` | `prod` 时启用强制登录、数据库默认切到 `/tmp/data/app.db`；本地 `dev` |
 | `INVITE_CODES` | 邀请码（逗号分隔），登录用；一个码 = 一个独立用户 |
 | `TOKEN_SECRET` | 登录 token 签名密钥（生产必填，用 `openssl rand -hex 32` 生成） |
+| `ADMIN_TOKEN` | 提示词管理后台令牌（访问 `/admin` 时填入，用 `openssl rand -hex 16` 生成） |
 | `MODEL_API_KEY` | 模型 Key（开发期可空，验收前提供） |
 | `MODEL_BASE_URL` / `MODEL_NAME` | 模型接口（接入真实 LLM 后使用） |
 | `QWEATHER_KEY` | 和风天气 Key（不填则天气降级为 mock） |
@@ -63,14 +64,22 @@ npm run dev -- -p 3002
 | `SENTRY_DSN` | 错误监控（可选） |
 | `STORAGE_PROVIDER` / `S3_*` | 对象存储备份（可选；未配置时退化为本地 `/tmp` 副本） |
 
+## 提示词管理后台
+
+后端内置了可在线编辑的「提示词 / 回复文案」管理页，用于不重新部署就调整系统提示词、追问话术、合规提醒、安全/技巧/误区条目等：
+
+- 地址：后端 URL + `/admin`（本地 `http://127.0.0.1:8003/admin`）
+- 在页面顶部填入 `ADMIN_TOKEN` 后即可编辑，保存即时生效
+- 内容保存在数据库 `prompt_overrides` 表（随数据备份一起持久化）
+
 ## 登录
 
 正式环境需要邀请码登录：前端输入邀请码 → 后端 `/api/v1/auth/login` 换取 token → 后续请求带 `Authorization: Bearer <token>`。所有数据接口按当前用户隔离（A 看不到 B 的数据）。
 
 ## 线上部署（火山引擎 veFaaS）
 
-- 前端（正式入口）：<https://s1oje4nc8ebo9006va6ns.apigateway-cn-beijing.volceapi.com/>
-- 后端（API 直连）：<https://scepg4p9u1a4e4riu9p6q.apigateway-cn-beijing.volceapi.com/>
+- 前端（正式入口）：<https://saukkdce3ioiapisnhd2c.apigateway-cn-beijing.volceapi.com/>
+- 后端（API 直连）：<https://seqhldkjqtj9oocse7tho.apigateway-cn-beijing.volceapi.com/>
 - 登录方式：邀请码登录（邀请码由产品经理分发，对应环境变量 `INVITE_CODES`）
 - 数据保障：预留实例常驻 + 每 5 分钟备份到对象存储 TOS + 启动自动恢复
 - 部署命令：
@@ -78,7 +87,7 @@ npm run dev -- -p 3002
   # 后端
   cd backend && vefaas deploy --command "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000" --port 8000 --yes
   # 前端（BACKEND_URL 在 build 时固化到 rewrites）
-  cd frontend && BACKEND_URL="https://scepg4p9u1a4e4riu9p6q.apigateway-cn-beijing.volceapi.com" vefaas deploy --buildCommand "npm run build && cp -r .next/static .next/standalone/.next/static" --outputPath ".next/standalone" --command "node server.js" --port 3000 --yes
+  cd frontend && BACKEND_URL="https://seqhldkjqtj9oocse7tho.apigateway-cn-beijing.volceapi.com" vefaas deploy --appId 96035ee6f4ee --buildCommand "npm run build && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public" --outputPath ".next/standalone" --command "node server.js" --port 3000 --yes
   ```
 
 ## 运行测试（第一层 mock 自动化）

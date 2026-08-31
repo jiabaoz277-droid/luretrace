@@ -18,16 +18,16 @@ export function MessageBubble({
 }) {
   const isUser = msg.role === "user";
   return (
-    <div className={isUser ? "flex justify-end" : "flex items-start justify-start gap-2"}>
+    <div className={isUser ? "chat-msg flex justify-end" : "chat-msg flex items-start justify-start gap-2"}>
       {!isUser && (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-lime text-sm font-bold text-daiwa">
-          付
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-lime text-sm font-bold text-[#17110a]">
+          L
         </div>
       )}
       <div
         className={
           isUser
-            ? "max-w-[85%] rounded-2xl rounded-br-md bg-lime px-4 py-2.5 text-sm leading-6 text-daiwa"
+            ? "max-w-[85%] rounded-2xl rounded-br-md bg-lime px-4 py-2.5 text-sm leading-6 text-[#17110a]"
             : "max-w-[92%] rounded-2xl rounded-bl-md bg-white/10 px-4 py-3 text-sm leading-6 text-white ring-1 ring-white/10"
         }
       >

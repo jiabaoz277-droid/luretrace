@@ -53,3 +53,31 @@ def test_default_species():
     plan = build_plan(_ctx(target_species=None), get_hourly("杭州"), [])
     assert plan.target_species == "翘嘴"
     assert any("未指定对象鱼" in r for r in plan.risks)
+
+
+def test_today_afternoon_skips_past_morning():
+    """午后问“今天”：只推荐当天剩余的傍晚窗口，不推荐已过去的清晨。"""
+    from datetime import datetime
+
+    now = datetime(2026, 8, 27, 11, 0)
+    ctx = _ctx(
+        time_label="8月27日 11:00–22:00",
+        start_iso="2026-08-27T11:00:00+08:00",
+        end_iso="2026-08-27T22:00:00+08:00",
+    )
+    plan = build_plan(ctx, get_hourly("杭州", target_date=now), [], now=now)
+    assert plan.best_window == "16:00–18:00"
+
+
+def test_today_past_explicit_window_tells_reschedule():
+    """明确问今天清晨但已过点：明确提示改期，不静默推荐过去的时间。"""
+    from datetime import datetime
+
+    now = datetime(2026, 8, 27, 11, 0)
+    ctx = _ctx(
+        time_label="8月27日 05:00–09:00",
+        start_iso="2026-08-27T05:00:00+08:00",
+        end_iso="2026-08-27T09:00:00+08:00",
+    )
+    plan = build_plan(ctx, get_hourly("杭州", target_date=now), [], now=now)
+    assert any("已过" in s for s in plan.safety)

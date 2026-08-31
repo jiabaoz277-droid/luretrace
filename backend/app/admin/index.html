@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>提示词管理 · 路迹</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --card: #ffffff;
+      --border: #e3e6ea;
+      --text: #1f2329;
+      --muted: #6b7280;
+      --accent: #0b6e4f;
+      --accent-hover: #095a41;
+      --danger: #b42318;
+      --ok: #0b6e4f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.6;
+    }
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: #ffffff; border-bottom: 1px solid var(--border);
+      padding: 14px 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    }
+    header h1 { font-size: 18px; margin: 0 16px 0 0; }
+    .token-bar { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+    .token-bar input { width: 220px; }
+    input[type=password], input[type=text] {
+      padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;
+    }
+    button {
+      padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff;
+      cursor: pointer; font-size: 13px; color: var(--text);
+    }
+    button:hover { background: #f0f2f5; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: var(--accent-hover); }
+    button.danger { color: var(--danger); border-color: #f3c2bd; }
+    button.danger:hover { background: #fdf0ef; }
+    .hint { color: var(--muted); font-size: 12px; }
+    main { max-width: 980px; margin: 20px auto; padding: 0 20px 60px; }
+    .group-title { font-size: 15px; margin: 24px 0 10px; color: var(--muted); }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px; margin-bottom: 14px;
+    }
+    .card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .card-title { font-weight: 600; font-size: 15px; }
+    .badge {
+      font-size: 11px; padding: 1px 8px; border-radius: 20px; background: #eef2ff; color: #4f46e5;
+    }
+    .badge.modified { background: #fef3c7; color: #b45309; }
+    .card-desc { color: var(--muted); font-size: 13px; margin: 6px 0 10px; }
+    textarea {
+      width: 100%; min-height: 96px; padding: 10px; font-size: 13px; line-height: 1.6;
+      border: 1px solid var(--border); border-radius: 8px; font-family: ui-monospace, Menlo, Consolas, monospace;
+      resize: vertical;
+    }
+    .card-foot { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+    .status { font-size: 12px; color: var(--ok); min-height: 16px; }
+    .status.err { color: var(--danger); }
+    .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>提示词 / 回复文案管理</h1>
+    <span class="hint">修改即时生效，无需重新部署</span>
+    <div class="token-bar">
+      <input id="token" type="password" placeholder="输入 ADMIN_TOKEN" />
+      <button id="save-token">保存令牌</button>
+      <span id="token-status" class="hint"></span>
+    </div>
+  </header>
+  <main id="list"><div class="empty">请先在上方输入 ADMIN_TOKEN 并保存。</div></main>
+
+  <script>
+    const API = "/api/v1/admin/prompts";
+    localStorage.removeItem("luji_admin_token");
+
+    async function login(v) {
+      const res = await fetch(API + "/login", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: v }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail?.message || "管理员令牌不正确");
+      document.getElementById("token").value = "";
+      document.getElementById("token-status").textContent = "已验证（1 小时）";
+      await load();
+    }
+    document.getElementById("save-token").addEventListener("click", async () => {
+      try { await login(document.getElementById("token").value.trim()); }
+      catch (e) { document.getElementById("token-status").textContent = e.message; }
+    });
+    document.getElementById("token").addEventListener("keydown", async (e) => {
+      if (e.key === "Enter") {
+        try { await login(e.target.value.trim()); }
+        catch (err) { document.getElementById("token-status").textContent = err.message; }
+      }
+    });
+
+    async function api(path, opts = {}) {
+      const res = await fetch(API + path, {
+        ...opts,
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = (data.detail && (data.detail.message || data.detail)) || ("HTTP " + res.status);
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    function badge(kind, modified) {
+      const kindLabel = kind === "list" ? "每行一条" : "文本";
+      return `<span class="badge">${kindLabel}</span>` + (modified ? `<span class="badge modified">已修改</span>` : "");
+    }
+
+    function card(item) {
+      const rows = item.kind === "list" ? 6 : (item.value.split("\n").length > 8 ? 16 : 5);
+      const el = document.createElement("div");
+      el.className = "card";
+      el.innerHTML = `
+        <div class="card-head">
+          <span class="card-title">${item.title}</span>
+          <code class="hint">${item.key}</code>
+          ${badge(item.kind, item.is_modified)}
+        </div>
+        <div class="card-desc">${item.description}</div>
+        <textarea rows="${rows}" data-key="${item.key}">${escapeHtml(item.value)}</textarea>
+        <div class="card-foot">
+          <button class="primary" data-act="save" data-key="${item.key}">保存</button>
+          <button data-act="reset" data-key="${item.key}">还原默认</button>
+          <span class="status" data-status="${item.key}"></span>
+        </div>`;
+      return el;
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    async function load() {
+      const list = document.getElementById("list");
+      try {
+        const data = await api("");
+        const byCat = {};
+        for (const it of data.items) {
+          (byCat[it.category] = byCat[it.category] || []).push(it);
+        }
+        list.innerHTML = "";
+        for (const cat of Object.keys(byCat)) {
+          const h = document.createElement("div");
+          h.className = "group-title";
+          h.textContent = cat;
+          list.appendChild(h);
+          for (const it of byCat[cat]) list.appendChild(card(it));
+        }
+      } catch (e) {
+        list.innerHTML = `<div class="empty">加载失败：${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    document.getElementById("list").addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-act]");
+      if (!btn) return;
+      const key = btn.dataset.key;
+      const status = document.querySelector(`[data-status="${key}"]`);
+      const textarea = document.querySelector(`textarea[data-key="${key}"]`);
+      status.className = "status";
+      try {
+        if (btn.dataset.act === "save") {
+          await api("/" + key, { method: "PUT", body: JSON.stringify({ value: textarea.value }) });
+          status.textContent = "已保存 ✓";
+        } else {
+          if (!confirm(`确定把「${key}」还原为默认值？`)) return;
+          const data = await api("/" + key + "/reset", { method: "POST" });
+          textarea.value = data.value;
+          status.textContent = "已还原默认 ✓";
+        }
+        setTimeout(load, 600);
+      } catch (err) {
+        status.classList.add("err");
+        status.textContent = "失败：" + err.message;
+      }
+    });
+
+    // 初始：Cookie 有效则直接加载，否则提示重新验证。
+    load();
+  </script>
+</body>
+</html>

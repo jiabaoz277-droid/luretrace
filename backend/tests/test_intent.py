@@ -23,6 +23,9 @@ def test_detect_intent():
     assert detect_intent("到了半小时没口怎么办").primary_intent == "ON_SITE_TROUBLESHOOT"
     assert detect_intent("空军了帮我复盘").primary_intent == "CATCH_REPORT"
     assert detect_intent("翘嘴什么习性").primary_intent == "KNOWLEDGE_QA"
+    assert detect_intent("鲈鱼的钓法").primary_intent == "KNOWLEDGE_QA"
+    assert detect_intent("我是新手不会钓").primary_intent == "KNOWLEDGE_QA"
+    assert detect_intent("路亚小白，没钓过").primary_intent == "KNOWLEDGE_QA"
     assert detect_intent("雷暴天能去吗").primary_intent == "SAFETY_STOP"
 
 
@@ -32,6 +35,17 @@ def test_plan_intent_wins_over_tackle_terms():
     result = detect_intent(text)
     assert result.primary_intent == "PLAN_TRIP"
     assert "TACKLE_QA" in result.secondary_intents
+
+
+def test_plan_context_wins_over_knowledge_wording():
+    """带时间和对象鱼的“钓法”是出钓任务，不应被新知识词反向误伤。"""
+    result = detect_intent("明天去杭州钓鲈鱼，给个钓法")
+    assert result.primary_intent == "PLAN_TRIP"
+
+
+def test_explicit_trip_context_wins_over_beginner_wording():
+    result = detect_intent("明早杭州，我是新手不会钓")
+    assert result.primary_intent == "PLAN_TRIP"
 
 
 def test_extract_slots_full():
@@ -47,6 +61,22 @@ def test_extract_relative_time():
     ctx = extract_slots("明早5点到9点", NOW)
     assert ctx.start_iso.startswith("2026-08-26T05:00")
     assert ctx.end_iso.startswith("2026-08-26T09:00")
+
+
+def test_today_plain_uses_rest_of_day():
+    """纯“今天”无时段 → 窗口从当前时刻到晚间，不把已过去的清晨当建议。"""
+    now = datetime(2026, 8, 25, 11, 0)
+    ctx = extract_slots("今天可以钓吗", now)
+    assert ctx.start_iso.startswith("2026-08-25T11:00")
+    assert ctx.end_iso.startswith("2026-08-25T22:00")
+
+
+def test_today_early_morning_window_still_available():
+    """凌晨问“今天”时，清晨窗口仍未过去，窗口从当前时刻起。"""
+    now = datetime(2026, 8, 25, 4, 0)
+    ctx = extract_slots("今天可以钓吗", now)
+    assert ctx.start_iso.startswith("2026-08-25T04:00")
+    assert ctx.end_iso.startswith("2026-08-25T22:00")
 
 
 def test_extract_weekend():

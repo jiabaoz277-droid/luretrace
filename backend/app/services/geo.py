@@ -1,9 +1,12 @@
 """地理位置解析（和风天气 GeoAPI v2，专属 API Host）：地点文本 → 经纬度。"""
 from __future__ import annotations
 
+import logging
 import httpx
 
 from ..core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def is_configured() -> bool:
@@ -26,6 +29,7 @@ def lookup_location(text: str) -> dict | None:
             headers=_headers(),
             timeout=10.0,
         )
+        resp.raise_for_status()
         data = resp.json()
         if data.get("location"):
             loc = data["location"][0]
@@ -38,7 +42,7 @@ def lookup_location(text: str) -> dict | None:
                 "lon": loc.get("lon"),
             }
     except Exception:  # noqa: BLE001
-        pass
+        logger.exception("QWeather location lookup failed")
     return None
 
 
@@ -55,6 +59,7 @@ def reverse_lookup(lat: float, lon: float) -> dict | None:
             headers=_headers(),
             timeout=10.0,
         )
+        resp.raise_for_status()
         data = resp.json()
         if data.get("location"):
             loc = data["location"][0]
@@ -68,5 +73,5 @@ def reverse_lookup(lat: float, lon: float) -> dict | None:
                 "lon": loc.get("lon"),
             }
     except Exception:  # noqa: BLE001
-        pass
+        logger.exception("QWeather reverse lookup failed")
     return None

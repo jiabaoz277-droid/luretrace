@@ -16,6 +16,10 @@ def _as_list(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+def _as_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class Settings:
     def __init__(self) -> None:
         self.env: str = os.getenv("ENV", "dev")
@@ -45,11 +49,19 @@ class Settings:
 
         # 登录（邀请码换 token）
         self.invite_codes: list[str] = _as_list(os.getenv("INVITE_CODES", ""))
+        # 提示词管理后台令牌（X-Admin-Token）；未配置时后台不可用
+        self.admin_token: str = os.getenv("ADMIN_TOKEN", "")
         # 生产环境必须显式配置 TOKEN_SECRET；未配置时签发 token 会失败（见 core/auth.py）
         self.token_secret: str = os.getenv(
             "TOKEN_SECRET", "dev-insecure-secret-change-me" if not self.is_prod else ""
         )
-        self.token_ttl_seconds: int = int(os.getenv("TOKEN_TTL_SECONDS", "2592000"))  # 30 天
+        self.token_ttl_seconds: int = int(os.getenv("TOKEN_TTL_SECONDS", "604800"))  # 7 天
+        self.login_rate_limit: int = int(os.getenv("LOGIN_RATE_LIMIT", "5"))
+        self.login_rate_window_seconds: int = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "300"))
+        self.login_block_seconds: int = int(os.getenv("LOGIN_BLOCK_SECONDS", "900"))
+        self.chat_rate_limit: int = int(os.getenv("CHAT_RATE_LIMIT", "20"))
+        self.upstream_rate_limit: int = int(os.getenv("UPSTREAM_RATE_LIMIT", "60"))
+        self.api_rate_window_seconds: int = int(os.getenv("API_RATE_WINDOW_SECONDS", "60"))
 
         self.api_prefix: str = "/api/v1"
 
@@ -77,6 +89,14 @@ class Settings:
         self.s3_bucket: str = os.getenv("S3_BUCKET", "")
         self.s3_region: str = os.getenv("S3_REGION", "cn-beijing")
         self.backup_interval_seconds: int = int(os.getenv("BACKUP_INTERVAL_SECONDS", "300"))
+
+        # 生产默认关闭 API 文档和模型诊断信息，可显式开启。
+        self.expose_api_docs: bool = _as_bool(
+            os.getenv("EXPOSE_API_DOCS", "false" if self.is_prod else "true")
+        )
+        self.expose_model_status: bool = _as_bool(
+            os.getenv("EXPOSE_MODEL_STATUS", "false" if self.is_prod else "true")
+        )
 
 
 settings = Settings()

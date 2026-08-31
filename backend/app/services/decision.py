@@ -315,6 +315,24 @@ def build_plan(
     if not constrained:
         constrained = [candidates[0]]
 
+    # 问的是“今天”时：剔除已经整段过去的窗口，避免推荐过去的时间；
+    # 若今天已无可用窗口，明确提示改期，而不是悄悄换成过去的时间。
+    req_start = _parse_iso(ctx.start_iso)
+    is_today = bool(req_start and req_start.date() == now.date())
+    if is_today:
+        future: list[tuple[int, int]] = []
+        for ws, we in constrained:
+            if we <= now.hour:
+                continue
+            ws = max(ws, now.hour)
+            if ws < we:
+                future.append((ws, we))
+        if future:
+            constrained = future
+        else:
+            safety.append("今天已过出钓窗口，建议改明天清晨或傍晚再作钓。")
+            constrained = [candidates[0]]
+
     mw = constrained[0]
     ew = constrained[1] if len(constrained) > 1 else None
 

@@ -1,25 +1,43 @@
-"""数据库引擎与会话工厂（SQLite + SQLAlchemy 同步）。"""
+"""数据库引擎与会话工厂（本地 SQLite，生产可切换托管数据库）。"""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from .config import settings
 
 _engine = None
 _SessionLocal = None
+logger = logging.getLogger(__name__)
 
 
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_engine(
-            settings.database_url,
-            connect_args={"check_same_thread": False},
-        )
+        kwargs: dict = {"pool_pre_ping": True}
+        if settings.database_url.startswith("sqlite:"):
+            kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
+        _engine = create_engine(settings.database_url, **kwargs)
     return _engine
+
+
+@event.listens_for(Engine, "connect")
+def _configure_sqlite(dbapi_connection, connection_record) -> None:  # noqa: ARG001
+    """SQLite 开启 WAL 和忙等待，减少并发读写时的 database is locked。"""
+    if dbapi_connection.__class__.__module__.split(".")[0] != "sqlite3":
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+    finally:
+        cursor.close()
 
 
 def init_db() -> None:
@@ -31,6 +49,11 @@ def init_db() -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=get_engine())
     _migrate_legacy()
+    if settings.is_prod and settings.database_url.startswith("sqlite:"):
+        logger.warning(
+            "Production is using SQLite. Configure DATABASE_URL with a managed database "
+            "before enabling multiple veFaaS instances."
+        )
 
 
 def _migrate_legacy() -> None:
@@ -63,6 +86,45 @@ def _migrate_legacy() -> None:
                 continue
             if col not in cols:
                 conn.execute(text(ddl))
+
+        # 旧实现在新任务时会把版本重置为 1，先无损重排历史版本。
+        duplicate_groups = conn.execute(
+            text(
+                "SELECT user_id, session_id FROM plans "
+                "GROUP BY user_id, session_id "
+                "HAVING COUNT(*) <> COUNT(DISTINCT version)"
+            )
+        ).mappings().all()
+        for group in duplicate_groups:
+            rows = conn.execute(
+                text(
+                    "SELECT id FROM plans "
+                    "WHERE user_id = :user_id AND session_id = :session_id "
+                    "ORDER BY created_at ASC, id ASC"
+                ),
+                {"user_id": group["user_id"], "session_id": group["session_id"]},
+            ).mappings().all()
+            for version, row in enumerate(rows, 1):
+                conn.execute(
+                    text("UPDATE plans SET version = :version WHERE id = :id"),
+                    {"version": version, "id": row["id"]},
+                )
+            logger.warning(
+                "Re-numbered %s legacy plans for session %s",
+                len(rows),
+                group["session_id"],
+            )
+
+        # 旧库 create_all 不会补 UniqueConstraint，修复数据后建立唯一索引。
+        try:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_plan_user_session_version "
+                    "ON plans (user_id, session_id, version)"
+                )
+            )
+        except Exception:  # 旧数据已有重复时不阻断启动
+            logger.exception("Unable to create the plan version uniqueness index")
 
 
 def get_session():

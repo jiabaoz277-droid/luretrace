@@ -3,17 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { Spot } from "@/types/api";
-
-const AMAP_JS_KEY = process.env.NEXT_PUBLIC_AMAP_JS_KEY || "";
-const AMAP_SECURITY = process.env.NEXT_PUBLIC_AMAP_SECURITY_CODE || "";
+import type { Map as LeafletMap } from "leaflet";
 
 const COLORS: Record<string, string> = {
-  回水湾: "#2563eb",
-  入水口: "#16a34a",
-  钓场: "#ea580c",
-  水域: "#0891b2",
-  近岸: "#9333ea",
-  收藏钓点: "#f59e0b",
+  回水湾: "#4c8df0",
+  入水口: "#3ecf7a",
+  钓场: "#f08a3c",
+  水域: "#33c4d6",
+  近岸: "#b983f0",
+  收藏钓点: "#f4b34a",
 };
 
 function escapeHtml(s: string): string {
@@ -24,29 +22,50 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-// 模块级缓存，避免重复加载高德 JS
-let amapPromise: Promise<any> | null = null;
+const PI = Math.PI;
+const AXIS = 6378245;
+const ECCENTRICITY = 0.006693421622965943;
 
-function loadAMap(): Promise<any> {
-  if (amapPromise) return amapPromise;
-  amapPromise = new Promise((resolve, reject) => {
-    const w = window as any;
-    if (w.AMap) {
-      resolve(w.AMap);
-      return;
-    }
-    // 安全密钥必须在 JS API 加载前设置
-    w._AMapSecurityConfig = { securityJsCode: AMAP_SECURITY };
-    const script = document.createElement("script");
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_JS_KEY}`;
-    script.onload = () => resolve(w.AMap);
-    script.onerror = () => {
-      amapPromise = null;
-      reject(new Error("高德地图加载失败"));
-    };
-    document.head.appendChild(script);
-  });
-  return amapPromise;
+function outsideChina(lat: number, lon: number) {
+  return lon < 72.004 || lon > 137.8347 || lat < 0.8293 || lat > 55.8271;
+}
+
+function transformLat(x: number, y: number) {
+  let value = -100 + 2 * x + 3 * y + .2 * y * y + .1 * x * y + .2 * Math.sqrt(Math.abs(x));
+  value += (20 * Math.sin(6 * x * PI) + 20 * Math.sin(2 * x * PI)) * 2 / 3;
+  value += (20 * Math.sin(y * PI) + 40 * Math.sin(y / 3 * PI)) * 2 / 3;
+  value += (160 * Math.sin(y / 12 * PI) + 320 * Math.sin(y * PI / 30)) * 2 / 3;
+  return value;
+}
+
+function transformLon(x: number, y: number) {
+  let value = 300 + x + 2 * y + .1 * x * x + .1 * x * y + .1 * Math.sqrt(Math.abs(x));
+  value += (20 * Math.sin(6 * x * PI) + 20 * Math.sin(2 * x * PI)) * 2 / 3;
+  value += (20 * Math.sin(x * PI) + 40 * Math.sin(x / 3 * PI)) * 2 / 3;
+  value += (150 * Math.sin(x / 12 * PI) + 300 * Math.sin(x / 30 * PI)) * 2 / 3;
+  return value;
+}
+
+/** 后端为高德展示返回 GCJ-02；OSM 使用 WGS-84，因此在显示层做逆转换。 */
+export function gcj02ToWgs84(lat: number, lon: number): [number, number] {
+  if (outsideChina(lat, lon)) return [lat, lon];
+  let dLat = transformLat(lon - 105, lat - 35);
+  let dLon = transformLon(lon - 105, lat - 35);
+  const radLat = lat / 180 * PI;
+  let magic = Math.sin(radLat);
+  magic = 1 - ECCENTRICITY * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = dLat * 180 / ((AXIS * (1 - ECCENTRICITY)) / (magic * sqrtMagic) * PI);
+  dLon = dLon * 180 / (AXIS / sqrtMagic * Math.cos(radLat) * PI);
+  return [lat * 2 - (lat + dLat), lon * 2 - (lon + dLon)];
+}
+
+function popupContent(spot: Spot) {
+  return `<div style="font-size:12px;line-height:1.6;max-width:220px">
+    <b>${escapeHtml(spot.name)} · ${escapeHtml(spot.spot_type)}</b><br/>
+    距你约 ${spot.distance_km} 公里<br/>
+    <span style="color:#666">${escapeHtml(spot.reason)}</span>
+  </div>`;
 }
 
 async function saveFavorite(s: Spot) {
@@ -68,81 +87,63 @@ async function saveFavorite(s: Spot) {
 
 export function SpotsMap({ spots }: { spots: Spot[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || mapRef.current || spots.length === 0) return;
+    if (!container || cleanupRef.current || spots.length === 0) return;
     let cancelled = false;
 
-    loadAMap()
-      .then((AMap) => {
+    async function mountOsm() {
+      try {
+        const L = await import("leaflet");
         if (cancelled || !containerRef.current) return;
-
-        const lngs = spots.map((s) => s.lon);
-        const lats = spots.map((s) => s.lat);
-        const center: [number, number] = [
-          (Math.min(...lngs) + Math.max(...lngs)) / 2,
-          (Math.min(...lats) + Math.max(...lats)) / 2,
-        ];
-
-        const map = new AMap.Map(container, {
-          zoom: 12,
-          center,
-          viewMode: "2D",
+        const positions = spots.map((spot) => gcj02ToWgs84(spot.lat, spot.lon));
+        const map: LeafletMap = L.map(containerRef.current, {
+          zoomControl: true,
+          attributionControl: true,
         });
-        mapRef.current = map;
-
-        const markers = spots.map((s) => {
-          const color = COLORS[s.spot_type] || "#64748b";
-          const marker = new AMap.Marker({
-            position: [s.lon, s.lat],
-            content: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.45)"></div>`,
-            offset: new AMap.Pixel(-8, -8),
-          });
-          marker.setMap(map);
-
-          const infoWindow = new AMap.InfoWindow({
-            content: `<div style="font-size:12px;line-height:1.6;max-width:220px">
-              <b>${escapeHtml(s.name)} · ${escapeHtml(s.spot_type)}</b><br/>
-              距你约 ${s.distance_km} 公里<br/>
-              <span style="color:#666">${escapeHtml(s.reason)}</span>
-            </div>`,
-            offset: new AMap.Pixel(0, -18),
-          });
-          marker.on("click", () => {
-            infoWindow.open(map, marker.getPosition());
-          });
-          return marker;
+        cleanupRef.current = () => map.remove();
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+        spots.forEach((spot, index) => {
+          L.circleMarker(positions[index], {
+            radius: 8,
+            color: "#fff",
+            weight: 2,
+            fillColor: COLORS[spot.spot_type] || "#64748b",
+            fillOpacity: 1,
+          }).addTo(map).bindPopup(popupContent(spot));
         });
+        map.fitBounds(L.latLngBounds(positions), { padding: [36, 36], maxZoom: 14 });
+        setError(null);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "地图加载失败");
+      }
+    }
 
-        if (markers.length > 0) {
-          map.setFitView(markers, false, [60, 60, 60, 60]);
-        }
-      })
-      .catch((e) => {
-        setError(e?.message || "地图加载失败");
-      });
+    void mountOsm();
 
     return () => {
       cancelled = true;
-      if (mapRef.current) {
-        mapRef.current.destroy();
-        mapRef.current = null;
-      }
+      cleanupRef.current?.();
+      cleanupRef.current = null;
     };
   }, [spots]);
 
   return (
     <div className="mt-2 overflow-hidden rounded-xl border border-line">
       <div ref={containerRef} className="h-52 w-full" />
+      <div className="bg-white/5 px-3 pt-2 text-[10px] text-ink-soft">地图：OpenStreetMap</div>
       {error && (
-        <div className="bg-surface px-3 py-2 text-xs text-accent">
+        <div className="bg-white/5 px-3 py-2 text-xs text-accent">
           {error}（点位列表仍可参考）
         </div>
       )}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 bg-surface px-3 py-2 text-xs text-ink-soft">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 bg-white/5 px-3 py-2 text-xs text-ink-soft">
         {spots.map((s, i) => (
           <span key={i} className="flex items-center gap-1">
             <span
@@ -153,7 +154,7 @@ export function SpotsMap({ spots }: { spots: Spot[] }) {
             {s.spot_type !== "收藏钓点" && (
               <button
                 onClick={() => saveFavorite(s)}
-                className="ml-1 rounded border border-daiwa/30 px-1.5 py-0.5 text-[10px] text-daiwa hover:bg-daiwa/10"
+                className="ml-1 rounded border border-lime/30 px-1.5 py-0.5 text-[10px] text-lime hover:bg-lime/10"
               >
                 收藏
               </button>

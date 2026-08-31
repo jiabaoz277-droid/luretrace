@@ -3,8 +3,8 @@ import type { InsightStats } from "@/types/api";
 
 export function InsightCard({ insight }: { insight: InsightStats }) {
   return (
-    <div className="mt-3 rounded-xl border border-line bg-surface p-3 text-xs text-ink">
-      <p className="mb-1.5 flex items-center gap-1.5 font-semibold text-daiwa">
+    <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-ink">
+      <p className="mb-1.5 flex items-center gap-1.5 font-semibold text-lime">
         <BarChart3 className="h-4 w-4" />
         我的规律（共 {insight.total} 次战报）
       </p>

@@ -21,13 +21,20 @@ def get_plan(plan_id: int, request: Request):
 
 
 @router.get("")
-def list_plans(request: Request, session_id: str = Query(...)):
+def list_plans(
+    request: Request,
+    session_id: str = Query(...),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
     user_id = current_user_id(request)
     with db.get_session() as s:
         plans = (
             s.query(Plan)
             .filter(Plan.session_id == session_id, Plan.user_id == user_id)
             .order_by(Plan.version.desc())
+            .offset(offset)
+            .limit(limit)
             .all()
         )
         return [p.to_plan_data() for p in plans]

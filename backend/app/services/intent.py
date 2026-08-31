@@ -129,6 +129,13 @@ def _parse_time(text: str, now: datetime) -> dict | None:
         if date_key is not None:
             if "晚" in date_key or "夜" in date_key:
                 start_hour, end_hour = 18, 22
+            elif "早" in date_key or "晨" in date_key:
+                start_hour, end_hour = 5, 9
+            elif target_date == now.date():
+                # 纯“今天”（无具体时段）：窗口从当前时刻到晚间，
+                # 避免把已经过去的清晨当成可执行建议
+                start_hour = now.hour
+                end_hour = 22 if now.hour < 22 else 23
             else:
                 start_hour, end_hour = 5, 9
     if start_hour is None:
@@ -256,6 +263,11 @@ _GO_OR_NOT_HINTS = ["值得去", "能去吗", "可以去吗", "适不适合", "�
 _CHOOSE_TIME_HINTS = ["几点", "什么时候", "什么时段", "时段", "哪个时间"]
 _CHOOSE_PLACE_HINTS = ["去哪", "哪里", "哪个地方", "什么地方", "哪个点", "什么点"]
 
+# 新手自我描述也是入门知识请求，不能被单个“钓”字兜底为出钓计划。
+BEGINNER_HINTS = (
+    "新手", "小白", "不会钓", "没钓过", "刚入门", "零基础", "第一次钓", "第一次路亚",
+)
+
 
 def _has_time(text: str) -> bool:
     return any(k in text for k in _TIME_HINTS)
@@ -330,8 +342,9 @@ def detect_intent(text: str) -> IntentResult:
         return IntentResult(primary_intent="TACKLE_QA", confidence="high", evidence=evidence)
 
     # 7) 知识问答
-    if any(k in text for k in ["是什么", "为什么", "习性", "介绍", "什么是", "怎么区分",
-                                "怎么钓", "怎么路亚", "如何钓", "能路亚吗", "能不能路亚",
+    if any(k in text for k in BEGINNER_HINTS) or any(k in text for k in ["是什么", "为什么", "习性", "介绍", "什么是", "怎么区分",
+                                "钓法", "怎么钓", "怎么作钓", "怎么路亚", "如何钓", "如何作钓",
+                                "如何路亚", "能路亚吗", "能不能路亚",
                                 "可以路亚吗", "适合路亚吗", "好路亚吗", "误区", "避坑",
                                 "技巧", "入门", "注意什么", "识鱼", "认鱼"]):
         evidence.append("知识问答")

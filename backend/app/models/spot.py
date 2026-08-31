@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String
+from sqlalchemy import DateTime, Float, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .plan import Base, utcnow
@@ -11,6 +11,9 @@ from .plan import Base, utcnow
 
 class FavoriteSpot(Base):
     __tablename__ = "favorite_spots"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_favorite_user_name"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(64), default="default", index=True)

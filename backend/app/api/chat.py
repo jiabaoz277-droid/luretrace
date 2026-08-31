@@ -6,16 +6,20 @@
 from __future__ import annotations
 
 import json
+import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from ..core.auth import current_user_id
+from ..core import rate_limit
+from ..core.config import settings
 from ..core.errors import AppError
 from ..schemas.chat import ChatRequest
 from ..services import agent, llm
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
 
 
 def _sse(data: dict) -> str:
@@ -30,16 +34,31 @@ def _chunks(text: str):
 
 
 @router.post("")
-async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
+def chat(req: ChatRequest, request: Request) -> StreamingResponse:
     user_id = current_user_id(request)
+    wait = rate_limit.check_action(
+        f"chat:{user_id}", limit=settings.chat_rate_limit,
+        window_seconds=settings.api_rate_window_seconds,
+    )
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "rate_limited", "message": "请求太频繁，请稍后再试"},
+            headers={"Retry-After": str(wait)},
+        )
 
-    async def gen():
+    def gen():
         try:
             result = agent.prepare(
                 req.message, req.session_id, context=req.context, user_id=user_id
             )
             sid = result.get("session_id")
             reply_parts: list[str] = []
+
+            preamble = result.get("preamble") or ""
+            if preamble:
+                reply_parts.append(preamble)
+                yield _sse({"type": "chunk", "content": preamble, "session_id": sid})
 
             if result.get("plan"):
                 # 真实模型逐 token 流式（安全 no_go 时为确定性文案）
@@ -76,6 +95,10 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             yield _sse({"type": "error", "error": {"code": e.code, "message": e.message}})
         except Exception:
             # 统一兜底：不向用户暴露堆栈
+            logger.exception(
+                "Chat stream failed",
+                extra={"trace_id": getattr(request.state, "trace_id", None)},
+            )
             yield _sse(
                 {
                     "type": "error",

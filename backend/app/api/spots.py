@@ -1,7 +1,7 @@
 """收藏钓点接口（第 3 阶段，按用户隔离）。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..core import db
 from ..core.auth import current_user_id
@@ -15,6 +15,13 @@ router = APIRouter(prefix="/spots", tags=["spots"])
 def add_spot(body: SpotCreate, request: Request):
     user_id = current_user_id(request)
     with db.get_session() as s:
+        existing = (
+            s.query(FavoriteSpot)
+            .filter(FavoriteSpot.user_id == user_id, FavoriteSpot.name == body.name)
+            .first()
+        )
+        if existing:
+            return existing.to_dict()
         spot = FavoriteSpot(
             user_id=user_id, name=body.name, location=body.location, lat=body.lat, lon=body.lon
         )
@@ -25,7 +32,11 @@ def add_spot(body: SpotCreate, request: Request):
 
 
 @router.get("")
-def list_spots(request: Request):
+def list_spots(
+    request: Request,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
     user_id = current_user_id(request)
     with db.get_session() as s:
         return [
@@ -33,6 +44,8 @@ def list_spots(request: Request):
             for sp in s.query(FavoriteSpot)
             .filter(FavoriteSpot.user_id == user_id)
             .order_by(FavoriteSpot.id.desc())
+            .offset(offset)
+            .limit(limit)
             .all()
         ]
 
